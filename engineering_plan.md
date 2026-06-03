@@ -1,0 +1,1600 @@
+# Engineering Plan: ZK Where's Waldo With a Private CNN Detector
+
+## 0. Executive summary
+
+Build a zero-knowledge proof system that lets a prover convince a verifier that they know Waldo's location inside a committed image, without revealing the location or the crop.
+
+The proof statement should be:
+
+```text
+Given public image_root, model_hash, verifier_key, and threshold,
+I know private coordinates x,y and private image pixels crop_pixels such that:
+
+1. crop_pixels are a valid crop from the committed full image image_root;
+2. the crop is located at private coordinates x,y;
+3. the agreed Waldo classifier evaluates crop_pixels and returns score >= threshold;
+4. the classifier weights/config used match model_hash.
+```
+
+The hard part is not the cryptography. The hard part is making the phrase "contains Waldo" machine-checkable, deterministic, cheap enough to prove, and robust enough to not be a toy.
+
+Recommended implementation path:
+
+1. Train a very small quantized CNN on fixed-size crops.
+2. First prove the classifier inference using EZKL, because it accepts ONNX models and generates ZK proofs for ML inference.
+3. Separately build the image commitment and Merkle inclusion proof.
+4. For the first true end-to-end private proof, use a zkVM such as RISC Zero to combine Merkle verification and integer CNN inference in one program, or build a custom Halo2/EZKL integration later.
+
+The practical MVP should not start with arbitrary high-resolution puzzle images. Start with constrained images, fixed dimensions, fixed crop size, and a small model.
+
+---
+
+## 1. What we are building
+
+### Product name
+
+`zk-waldo`
+
+### User story
+
+As a prover, I want to prove that I know where Waldo is in a public puzzle image, without revealing the coordinates.
+
+As a verifier, I want to verify the proof using only:
+
+```text
+image_root
+model_hash
+threshold
+proof
+public classifier result commitment/output
+```
+
+The verifier should learn only:
+
+```text
+The prover knows a private crop from the committed image that passes the agreed Waldo detector.
+```
+
+The verifier should not learn:
+
+```text
+x coordinate
+y coordinate
+crop pixels
+which image tiles were used
+where in the image Waldo is
+```
+
+---
+
+## 2. Reality check
+
+This system does not prove metaphysical truth like:
+
+```text
+This is objectively Waldo.
+```
+
+It proves:
+
+```text
+This private crop from this committed image passes this specific public classifier.
+```
+
+That is still a real zero-knowledge version of Where's Waldo, but the semantic trust shifts to the classifier and the training/evaluation process.
+
+Important implications:
+
+- A bad classifier makes the proof meaningless.
+- A weak threshold may allow false positives.
+- A too-strict threshold may reject valid Waldo crops.
+- If the full image contains decoys that look like Waldo, the model may accept them.
+- The public should agree on the model hash, threshold, image preprocessing, and crop format before the proof is generated.
+
+---
+
+## 3. Recommended high-level architecture
+
+```text
+                 ┌─────────────────────────────┐
+                 │       Public puzzle image    │
+                 └──────────────┬──────────────┘
+                                │
+                                ▼
+                 ┌─────────────────────────────┐
+                 │ Normalize image dimensions   │
+                 │ RGB, fixed width/height      │
+                 └──────────────┬──────────────┘
+                                │
+                                ▼
+                 ┌─────────────────────────────┐
+                 │ Split into tiles             │
+                 │ e.g. 16x16 or 32x32 pixels  │
+                 └──────────────┬──────────────┘
+                                │
+                                ▼
+                 ┌─────────────────────────────┐
+                 │ Poseidon Merkle tree         │
+                 │ public root = image_root     │
+                 └──────────────┬──────────────┘
+                                │
+             private x,y        │
+                 ┌──────────────▼──────────────┐
+                 │ Extract private crop         │
+                 │ e.g. 64x64 or 96x96 RGB     │
+                 └──────────────┬──────────────┘
+                                │
+                                ▼
+                 ┌─────────────────────────────┐
+                 │ ZK proof program/circuit     │
+                 │ 1. verify crop inclusion     │
+                 │ 2. run quantized CNN         │
+                 │ 3. enforce score >= threshold│
+                 └──────────────┬──────────────┘
+                                │
+                                ▼
+                 ┌─────────────────────────────┐
+                 │ Verifier accepts/rejects     │
+                 └─────────────────────────────┘
+```
+
+---
+
+## 4. Public and private inputs
+
+### Public inputs
+
+```rust
+struct PublicInputs {
+    image_root: FieldElement,
+    model_hash: [u8; 32],
+    preprocessing_hash: [u8; 32],
+    threshold: i32,
+    image_width: u32,
+    image_height: u32,
+    crop_width: u32,
+    crop_height: u32,
+}
+```
+
+### Private witness
+
+```rust
+struct PrivateWitness {
+    x: u32,
+    y: u32,
+    crop_pixels: Vec<u8>,
+    tile_pixels: Vec<Tile>,
+    merkle_paths: Vec<MerklePath>,
+    model_weights: Option<ModelWeights>,
+}
+```
+
+The model weights can be handled in two ways:
+
+1. Public model, private crop:
+   - Model weights are public.
+   - The proof only hides the crop and coordinates.
+   - This is the recommended first version.
+
+2. Private model, private crop:
+   - The proof hides both the model and crop.
+   - The verifier only sees `model_hash`.
+   - This is more complex and less desirable for a public puzzle because everyone should agree on the detector.
+
+Use public model weights for this project.
+
+---
+
+## 5. Formal proof statement
+
+Let:
+
+```text
+I = normalized full image
+T = tile tree built from I
+root(T) = image_root
+C = crop(I, x, y, crop_width, crop_height)
+M = public quantized CNN model
+score = M(C)
+```
+
+The proof should establish:
+
+```text
+exists x, y, C, merkle_paths such that:
+
+1. 0 <= x < image_width
+2. 0 <= y < image_height
+3. C corresponds to the crop around x,y
+4. each tile needed to reconstruct C is included in Merkle tree T
+5. root(T) == image_root
+6. hash(M) == model_hash
+7. M(C) == score
+8. score >= threshold
+```
+
+The coordinates and crop are private witness data.
+
+---
+
+## 6. Tooling strategy
+
+### 6.1 Best MVP tooling
+
+Use two tracks:
+
+#### Track A: zkML classifier proof with EZKL
+
+Purpose:
+
+- Prove that a private crop passes the CNN classifier.
+- Validate model size, quantization, accuracy, proof generation time, and proof verification.
+
+Why:
+
+- EZKL accepts models exported to ONNX.
+- It generates ZK-compatible circuits automatically.
+- It avoids custom circuit work during early ML iteration.
+
+Limitation:
+
+- EZKL by itself does not naturally prove that the private crop came from a committed image Merkle root unless you encode that logic into the computation graph or integrate custom constraints.
+
+Track A proof statement:
+
+```text
+I know private crop_pixels such that:
+CNN(crop_pixels) >= threshold
+```
+
+This is not the final product, but it validates the zkML bottleneck.
+
+#### Track B: end-to-end proof with a zkVM
+
+Purpose:
+
+- Prove Merkle inclusion and CNN inference in one proof.
+
+Why:
+
+- A zkVM lets you write the proof logic as normal Rust code.
+- The program can verify Merkle paths, reconstruct the crop, run integer CNN inference, and commit only the result.
+
+Limitation:
+
+- Running CNN inference inside a zkVM can be slower than a specialized circuit.
+- You should manually implement a very small quantized model rather than trying to run a full ONNX runtime inside the guest.
+
+Track B proof statement:
+
+```text
+I know x,y,crop_pixels,merkle_paths such that:
+image_root is valid AND CNN(crop_pixels) >= threshold
+```
+
+This is the first true end-to-end version.
+
+### 6.2 Longer-term production path
+
+After the MVP works, choose one:
+
+1. Stay with zkVM if proof generation is acceptable.
+2. Build a custom Halo2 circuit that combines:
+   - Poseidon Merkle inclusion;
+   - quantized convolution layers;
+   - ReLU/activation constraints;
+   - final threshold check.
+3. Build/extend an EZKL/Halo2 composition strategy if EZKL exposes enough hooks for custom pre/post constraints.
+4. Use proof recursion/aggregation to combine a Merkle proof and an ML inference proof into one verifier-facing proof.
+
+---
+
+## 7. Model design
+
+### 7.1 Input format
+
+Use a tiny fixed-size crop:
+
+```text
+Version 0: 64x64 RGB
+Version 1: 96x96 RGB
+Version 2: 128x128 RGB, only if performance allows
+```
+
+Start with `64x64x3` because proof cost grows quickly.
+
+Preprocessing:
+
+```text
+1. Decode source image.
+2. Convert to RGB.
+3. Resize full image to canonical dimensions.
+4. Extract crop centered or top-left anchored at x,y.
+5. Resize crop to model input size if needed.
+6. Quantize pixels to uint8 or field integers.
+7. Normalize using deterministic integer arithmetic.
+```
+
+Avoid floating point inside the proof.
+
+### 7.2 CNN architecture
+
+Start very small:
+
+```text
+Input: 64x64x3 uint8
+
+Conv2D: 3 input channels, 8 filters, kernel 3x3, stride 2
+ReLU
+Conv2D: 8 channels, 16 filters, kernel 3x3, stride 2
+ReLU
+Conv2D: 16 channels, 32 filters, kernel 3x3, stride 2
+ReLU
+GlobalAveragePool or Flatten
+Dense: 32 -> 1
+Sigmoid/logit threshold
+```
+
+For ZK, do not prove sigmoid if avoidable. Use logits.
+
+Instead of:
+
+```text
+sigmoid(logit) >= 0.95
+```
+
+prove:
+
+```text
+logit >= threshold_logit
+```
+
+This avoids expensive non-linear operations.
+
+### 7.3 Quantization
+
+Use integer-only inference:
+
+```text
+weights: int8
+activations: int8 or int16
+accumulators: int32
+biases: int32
+```
+
+Recommended quantization approach:
+
+1. Train in PyTorch with float32.
+2. Export to ONNX.
+3. Quantize with ONNX Runtime static quantization, using calibration crops.
+4. Validate ONNX and quantized outputs match PyTorch closely enough.
+5. Freeze quantized weights and scales.
+6. For zkVM path, export weights to Rust arrays.
+
+Important: prove logits over fixed-point integers. Do not use runtime floating-point math in the proof.
+
+### 7.4 Model hash
+
+Create a canonical model artifact:
+
+```text
+model.json
+weights.bin
+preprocessing.json
+threshold.json
+```
+
+Then compute:
+
+```text
+model_hash = SHA256(canonical_model_bundle)
+```
+
+For circuit-native hashing, use Poseidon internally where needed. For external artifact identity, SHA-256 is fine.
+
+---
+
+## 8. Training data plan
+
+### 8.1 Legal/copyright note
+
+Where's Waldo images are copyrighted. For a public repo or demo, use one of these:
+
+1. A user-supplied licensed image.
+2. A synthetic Waldo-like dataset created from original art.
+3. A toy puzzle with a custom character.
+4. Public domain crowd-scene images plus a custom inserted target character.
+
+For engineering, call the target `Waldo` in code if private, but use `target_character` in any public repo.
+
+### 8.2 Dataset structure
+
+```text
+data/
+  raw/
+    puzzles/
+      puzzle_001.png
+      puzzle_002.png
+  annotations/
+    puzzle_001.json
+    puzzle_002.json
+  crops/
+    train/
+      positive/
+      negative/
+    val/
+      positive/
+      negative/
+    test/
+      positive/
+      negative/
+```
+
+Annotation format:
+
+```json
+{
+  "image_id": "puzzle_001",
+  "image_path": "data/raw/puzzles/puzzle_001.png",
+  "waldo_bbox": {
+    "x": 1234,
+    "y": 456,
+    "width": 42,
+    "height": 96
+  }
+}
+```
+
+### 8.3 Positive crops
+
+Generate positives by sampling around the true bounding box:
+
+```text
+center crop around Waldo
+slightly shifted crop
+slightly scaled crop
+color jitter crop
+mild blur crop
+compression artifact crop
+```
+
+### 8.4 Negative crops
+
+Generate negatives from:
+
+```text
+random non-overlapping image areas
+red-white striped false positives
+faces without Waldo
+crowd characters
+high-texture patches
+nearby decoys
+```
+
+Hard negatives matter. Without them, the classifier will learn "red and white pixels" instead of Waldo.
+
+### 8.5 Dataset target sizes
+
+For MVP:
+
+```text
+positive crops: 1,000 to 5,000
+negative crops: 5,000 to 25,000
+hard negatives: at least 1,000
+```
+
+For a stronger demo:
+
+```text
+positive crops: 10,000+
+negative crops: 100,000+
+```
+
+Because the input domain is narrow, a tiny model can work surprisingly well if hard negatives are strong.
+
+---
+
+## 9. Image commitment design
+
+### 9.1 Canonical image preprocessing
+
+The image must be canonicalized before commitment.
+
+Rules:
+
+```text
+1. Input image must be PNG.
+2. Decode using pinned library version.
+3. Convert to RGB, no alpha.
+4. Resize to fixed width/height, or reject if dimensions mismatch.
+5. Store pixels row-major.
+6. Split into fixed-size tiles.
+7. Hash each tile deterministically.
+8. Build Merkle tree using Poseidon or another ZK-friendly hash.
+```
+
+Every verifier and prover must use the same preprocessing rules.
+
+### 9.2 Tile size
+
+Recommended:
+
+```text
+16x16 RGB for precision
+32x32 RGB for fewer Merkle paths
+```
+
+Tradeoff:
+
+- Smaller tiles reduce over-fetching for a crop.
+- Larger tiles reduce tree size and number of Merkle paths.
+
+For `64x64` crop:
+
+```text
+16x16 tiles -> 16 tiles per crop if aligned, more if unaligned
+32x32 tiles -> 4 tiles per crop if aligned, more if unaligned
+```
+
+Recommended MVP:
+
+```text
+32x32 tiles
+64x64 crop
+require crop aligned to tile boundaries
+```
+
+This reduces complexity. Later, remove alignment requirement.
+
+### 9.3 Leaf hashing
+
+Each tile is converted into field elements.
+
+Example:
+
+```text
+tile = 32 x 32 x 3 bytes = 3072 bytes
+chunk into field-safe limbs
+hash chunks with Poseidon sponge
+leaf = Poseidon(tile_chunks)
+```
+
+Avoid hashing thousands of raw bytes directly in the circuit if possible. For the zkVM path, raw bytes are easier but still cost cycles.
+
+### 9.4 Merkle proof structure
+
+```rust
+struct MerklePath {
+    leaf_index: u32,
+    siblings: Vec<FieldElement>,
+    directions: Vec<bool>,
+}
+```
+
+The circuit/program checks:
+
+```text
+computed_root == public image_root
+```
+
+### 9.5 Privacy issue: number of Merkle paths
+
+The number of paths can leak crop alignment or size if variable.
+
+Fix:
+
+```text
+Always use a fixed crop size and fixed number of tiles.
+Pad unused paths if necessary.
+```
+
+For the MVP, make everything fixed.
+
+---
+
+## 10. Coordinate privacy
+
+The verifier must not learn which tiles are proven.
+
+In a normal public Merkle proof, the verifier sees leaf indices and paths. That would reveal the location.
+
+In this project, Merkle proof verification must happen inside ZK:
+
+```text
+private leaf indices
+private directions
+private siblings
+public root
+```
+
+The proof reveals only that some private leaves are included under the public root.
+
+Do not expose:
+
+```text
+leaf_index
+path directions
+sibling hashes
+crop tile positions
+```
+
+Only expose:
+
+```text
+image_root
+proof
+accept/reject result
+```
+
+---
+
+## 11. Proof architecture options
+
+### Option 1: EZKL-only classifier proof
+
+This is the fastest first milestone.
+
+```text
+Private input: crop_pixels
+Public input: model_hash, threshold, maybe public score bucket
+Proof: CNN(crop_pixels) >= threshold
+```
+
+Pros:
+
+- Fastest to get a zkML proof working.
+- Good for proving the model is small enough.
+- Lets you iterate on ML before solving proof composition.
+
+Cons:
+
+- Does not prove crop came from the committed image.
+- Not a true Where's Waldo proof yet.
+
+Use this as Milestone 1 only.
+
+### Option 2: RISC Zero zkVM end-to-end proof
+
+Write Rust guest code:
+
+```rust
+fn main() {
+    let public = env::read::<PublicInputs>();
+    let witness = env::read::<PrivateWitness>();
+
+    assert_bounds(witness.x, witness.y, public.image_width, public.image_height);
+    verify_crop_merkle_paths(&public, &witness);
+    let logit = run_quantized_cnn(&witness.crop_pixels, MODEL_WEIGHTS);
+    assert!(logit >= public.threshold);
+
+    env::commit(&PublicOutput {
+        image_root: public.image_root,
+        model_hash: public.model_hash,
+        threshold: public.threshold,
+        accepted: true,
+    });
+}
+```
+
+Pros:
+
+- One proof covers everything.
+- No custom circuit needed.
+- Rust code is easier to audit than handwritten circuit constraints.
+
+Cons:
+
+- CNN inference may be expensive.
+- Need to keep model tiny.
+- Need deterministic integer-only inference.
+
+This is the recommended first end-to-end version.
+
+### Option 3: Custom Halo2 circuit
+
+Build a specialized circuit for:
+
+```text
+Poseidon Merkle path checks
+Conv2D layers
+ReLU
+Pooling
+Dense layer
+Threshold comparison
+```
+
+Pros:
+
+- More efficient than zkVM if implemented well.
+- Cleaner final cryptographic architecture.
+
+Cons:
+
+- Much more circuit engineering.
+- Higher risk of under-constrained bugs.
+- Slower iteration.
+
+Use only after the zkVM prototype proves the product is interesting.
+
+### Option 4: Proof composition/recursion
+
+Generate:
+
+```text
+Proof A: private crop is from committed image
+Proof B: private crop passes CNN
+Proof C: A and B refer to the same crop commitment
+```
+
+Pros:
+
+- Lets you use best tool for each subproblem.
+- May allow EZKL for ML and custom circuit for image inclusion.
+
+Cons:
+
+- Commitment consistency is subtle.
+- Recursion/aggregation can add complexity.
+- Toolchain compatibility may be painful.
+
+Use later.
+
+---
+
+## 12. Recommended milestone plan
+
+### Milestone 0: Non-ZK prototype
+
+Goal:
+
+```text
+Given an image and annotated Waldo location, train a tiny CNN that classifies crops.
+```
+
+Tasks:
+
+- Create dataset tooling.
+- Generate positive and negative crops.
+- Train tiny CNN in PyTorch.
+- Evaluate false positive and false negative rates.
+- Export to ONNX.
+- Quantize to int8.
+- Validate quantized inference.
+
+Acceptance criteria:
+
+```text
+AUC >= 0.98 on toy/synthetic validation set
+false positive rate low enough on hard negatives
+model input <= 96x96
+model params <= 50k initially
+```
+
+Deliverables:
+
+```text
+models/waldo_cnn_float32.pt
+models/waldo_cnn.onnx
+models/waldo_cnn_int8.onnx
+reports/model_eval.md
+```
+
+### Milestone 1: EZKL classifier proof
+
+Goal:
+
+```text
+Prove private crop passes the CNN classifier.
+```
+
+Tasks:
+
+- Install EZKL.
+- Generate settings for ONNX model.
+- Compile model.
+- Generate witness for sample positive crop.
+- Generate proof.
+- Verify proof locally.
+- Benchmark proof time, memory, proof size, verification time.
+
+Acceptance criteria:
+
+```text
+proof verifies locally
+proof input crop remains private
+public output only reveals pass/fail or score commitment
+proving time is measured and documented
+```
+
+Deliverables:
+
+```text
+proofs/sample_positive.proof
+proofs/sample_negative_should_fail.log
+benchmarks/ezkl_classifier_bench.md
+```
+
+### Milestone 2: Image commitment and private Merkle inclusion prototype
+
+Goal:
+
+```text
+Build the committed image representation and prove crop inclusion outside ML.
+```
+
+Tasks:
+
+- Implement canonical image preprocessing.
+- Split image into tiles.
+- Build Poseidon Merkle tree.
+- Extract crop and required tile paths.
+- Write circuit or zkVM program to verify inclusion.
+- Keep tile indices private.
+
+Acceptance criteria:
+
+```text
+public image_root is stable across machines
+private paths verify inside ZK
+invalid crop/path fails
+coordinates are not exposed
+```
+
+Deliverables:
+
+```text
+packages/image-commitment
+packages/merkle-prover
+reports/image_commitment_spec.md
+```
+
+### Milestone 3: End-to-end zkVM proof
+
+Goal:
+
+```text
+One proof verifies both image inclusion and CNN classifier acceptance.
+```
+
+Tasks:
+
+- Export quantized model weights to Rust constants.
+- Implement integer Conv2D/ReLU/pooling/dense layers in Rust.
+- Add fixed-point scaling rules.
+- Add Merkle path verification.
+- Add threshold check.
+- Generate RISC Zero proof.
+- Verify proof locally.
+
+Acceptance criteria:
+
+```text
+valid Waldo crop proof verifies
+wrong crop fails
+tampered Merkle path fails
+wrong image_root fails
+wrong model_hash fails
+threshold manipulation fails
+proof reveals no x,y,crop/path data
+```
+
+Deliverables:
+
+```text
+packages/zkvm-guest
+packages/zkvm-host
+proofs/end_to_end_valid.receipt
+proofs/end_to_end_invalid_tests.log
+benchmarks/zkvm_end_to_end_bench.md
+```
+
+### Milestone 4: Verifier app
+
+Goal:
+
+```text
+Anyone can verify a proof for a committed puzzle.
+```
+
+Tasks:
+
+- Build CLI verifier.
+- Build small web verifier.
+- Display public puzzle image.
+- Display public image root.
+- Upload proof.
+- Verify proof.
+- Show result.
+
+Acceptance criteria:
+
+```text
+verifier works without access to private crop
+verifier does not need original annotation
+verifier gives deterministic pass/fail
+```
+
+Deliverables:
+
+```text
+apps/verifier-web
+apps/verifier-cli
+```
+
+### Milestone 5: On-chain verifier, optional
+
+Goal:
+
+```text
+Verify proof on Ethereum or an L2.
+```
+
+Tasks:
+
+- Compress proof to on-chain-verifiable format if toolchain supports it.
+- Deploy verifier contract.
+- Submit public inputs and proof.
+- Emit event on success.
+
+Acceptance criteria:
+
+```text
+contract verifies proof on testnet
+gas cost measured
+public inputs are canonicalized
+```
+
+Deliverables:
+
+```text
+contracts/ZkWaldoVerifier.sol
+deployments/sepolia.json
+reports/onchain_verification.md
+```
+
+---
+
+## 13. Repository layout
+
+```text
+zk-waldo/
+  README.md
+  engineering_plan.md
+
+  data/
+    raw/
+    annotations/
+    crops/
+    processed/
+
+  models/
+    src/
+      train.py
+      model.py
+      export_onnx.py
+      quantize.py
+      evaluate.py
+    artifacts/
+      waldo_cnn_float32.pt
+      waldo_cnn.onnx
+      waldo_cnn_int8.onnx
+      model_bundle.json
+
+  packages/
+    image-commitment/
+      src/
+        preprocess.rs
+        tiles.rs
+        merkle.rs
+        poseidon.rs
+      tests/
+
+    crop-tools/
+      src/
+        extract_crop.rs
+        generate_witness.rs
+      tests/
+
+    ezkl-classifier/
+      scripts/
+        gen_settings.sh
+        compile.sh
+        prove.sh
+        verify.sh
+      witnesses/
+      proofs/
+
+    zkvm-guest/
+      src/
+        main.rs
+        cnn.rs
+        merkle.rs
+        fixed_point.rs
+        public_inputs.rs
+
+    zkvm-host/
+      src/
+        main.rs
+        prove.rs
+        verify.rs
+        witness.rs
+
+  apps/
+    verifier-web/
+    verifier-cli/
+
+  contracts/
+    src/
+      ZkWaldoVerifier.sol
+    test/
+
+  reports/
+    model_eval.md
+    ezkl_classifier_bench.md
+    image_commitment_spec.md
+    zkvm_end_to_end_bench.md
+    security_review.md
+```
+
+---
+
+## 14. CLI design
+
+### 14.1 Commit image
+
+```bash
+zk-waldo commit-image \
+  --image data/raw/puzzles/puzzle_001.png \
+  --width 2048 \
+  --height 1536 \
+  --tile-size 32 \
+  --out data/processed/puzzle_001.commitment.json
+```
+
+Output:
+
+```json
+{
+  "image_id": "puzzle_001",
+  "image_width": 2048,
+  "image_height": 1536,
+  "tile_size": 32,
+  "hash_function": "poseidon_bn254_v1",
+  "image_root": "0x...",
+  "preprocessing_hash": "0x..."
+}
+```
+
+### 14.2 Generate witness
+
+```bash
+zk-waldo generate-witness \
+  --image data/raw/puzzles/puzzle_001.png \
+  --commitment data/processed/puzzle_001.commitment.json \
+  --x 1234 \
+  --y 456 \
+  --crop-size 64 \
+  --out witnesses/puzzle_001_witness.json
+```
+
+### 14.3 Prove classifier only
+
+```bash
+zk-waldo prove-classifier \
+  --model models/artifacts/waldo_cnn_int8.onnx \
+  --crop witnesses/crop_001.json \
+  --threshold 8123 \
+  --out proofs/classifier_001.proof
+```
+
+### 14.4 Prove end-to-end
+
+```bash
+zk-waldo prove \
+  --commitment data/processed/puzzle_001.commitment.json \
+  --witness witnesses/puzzle_001_witness.json \
+  --model-bundle models/artifacts/model_bundle.json \
+  --threshold 8123 \
+  --out proofs/puzzle_001.receipt
+```
+
+### 14.5 Verify
+
+```bash
+zk-waldo verify \
+  --proof proofs/puzzle_001.receipt \
+  --image-root 0x... \
+  --model-hash 0x... \
+  --threshold 8123
+```
+
+Output:
+
+```text
+valid: true
+statement: prover knows a private crop from image_root that passes model_hash at threshold 8123
+```
+
+---
+
+## 15. Rust data structures
+
+### 15.1 Public inputs
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PublicInputs {
+    pub image_root: [u8; 32],
+    pub model_hash: [u8; 32],
+    pub preprocessing_hash: [u8; 32],
+    pub threshold_logit: i32,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub crop_width: u32,
+    pub crop_height: u32,
+    pub tile_size: u32,
+}
+```
+
+### 15.2 Private witness
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PrivateWitness {
+    pub x: u32,
+    pub y: u32,
+    pub crop_pixels: Vec<u8>,
+    pub tiles: Vec<TileWitness>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TileWitness {
+    pub tile_x: u32,
+    pub tile_y: u32,
+    pub pixels: Vec<u8>,
+    pub merkle_path: Vec<[u8; 32]>,
+    pub path_directions: Vec<bool>,
+}
+```
+
+### 15.3 Public output
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PublicOutput {
+    pub image_root: [u8; 32],
+    pub model_hash: [u8; 32],
+    pub preprocessing_hash: [u8; 32],
+    pub threshold_logit: i32,
+    pub accepted: bool,
+}
+```
+
+---
+
+## 16. CNN inference implementation in zkVM
+
+### 16.1 Avoid ONNX runtime in the guest
+
+Do not attempt to run full ONNX Runtime inside the zkVM guest for the MVP.
+
+Instead:
+
+1. Train/export/quantize using PyTorch/ONNX outside the proof.
+2. Freeze the quantized model.
+3. Generate Rust constants for weights, biases, scales, and zero points.
+4. Implement only the exact ops used by the model.
+
+### 16.2 Supported ops for MVP
+
+```text
+Conv2D int8/int16
+ReLU / clamp
+Average pooling or global average pooling
+Dense layer
+Integer threshold comparison
+```
+
+Avoid:
+
+```text
+BatchNorm at proof time
+Sigmoid
+Softmax
+Floating point
+Dynamic shapes
+Attention
+Large fully connected layers
+```
+
+BatchNorm should be folded into Conv weights before export.
+
+### 16.3 Fixed-point arithmetic
+
+Use deterministic fixed-point math:
+
+```rust
+pub type Act = i16;
+pub type Weight = i8;
+pub type Acc = i32;
+
+fn requantize(acc: i32, multiplier: i32, shift: u32, zero_point: i16) -> i16 {
+    let scaled = ((acc as i64 * multiplier as i64) >> shift) as i32;
+    clamp_i16(scaled + zero_point as i32)
+}
+```
+
+The exact quantization formula must match the model export path. Write golden tests comparing Rust inference to Python inference.
+
+---
+
+## 17. Testing strategy
+
+### 17.1 Unit tests
+
+```text
+image preprocessing is deterministic
+same image produces same root
+modified one pixel changes root
+valid Merkle path verifies
+invalid Merkle path fails
+crop extraction matches expected pixels
+Rust CNN matches Python output
+threshold check accepts/rejects correctly
+```
+
+### 17.2 Proof tests
+
+```text
+valid Waldo crop -> proof verifies
+random crop -> proof fails
+wrong x,y with correct crop -> proof fails
+correct crop with wrong Merkle path -> proof fails
+correct crop with wrong image root -> proof fails
+correct crop with wrong model hash -> proof fails
+lowered threshold not accepted unless public input uses lowered threshold
+modified model weights fail model_hash check
+```
+
+### 17.3 Privacy tests
+
+Check that public proof artifacts do not contain:
+
+```text
+x
+y
+crop pixels
+tile indices
+path directions
+sibling hashes
+```
+
+This is not a cryptographic proof by itself, but it catches accidental serialization leaks.
+
+### 17.4 ML tests
+
+```text
+holdout validation accuracy
+hard negative false positive rate
+cross-puzzle generalization
+cropping jitter robustness
+compression robustness
+resize robustness
+```
+
+Most important metric:
+
+```text
+false positive rate on hard negatives
+```
+
+For this use case, false positives are worse than occasional false negatives.
+
+---
+
+## 18. Benchmarking plan
+
+Record benchmarks for every model version.
+
+```text
+model_id
+input size
+parameter count
+ops count
+proof backend
+proving hardware
+proof generation time
+peak memory
+proof size
+verification time
+classifier accuracy
+false positive rate
+false negative rate
+```
+
+Benchmark table template:
+
+```markdown
+| Model | Input | Params | Backend | Prove time | Peak RAM | Proof size | Verify time | FPR | FNR |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---:|
+| cnn_v0 | 64x64 | 12k | EZKL | TBD | TBD | TBD | TBD | TBD | TBD |
+| cnn_v0 | 64x64 | 12k | RISC Zero | TBD | TBD | TBD | TBD | TBD | TBD |
+```
+
+Do not optimize blindly. Benchmark first.
+
+---
+
+## 19. Security considerations
+
+### 19.1 Under-constrained proofs
+
+Risk:
+
+```text
+The circuit/program verifies some weaker statement than intended.
+```
+
+Examples:
+
+- Crop pixels are not actually tied to Merkle leaves.
+- Merkle directions are not constrained.
+- x,y bounds are not enforced.
+- Model hash is not tied to the weights used.
+- Threshold comparison uses the wrong scale.
+
+Mitigations:
+
+- Write negative tests.
+- Fuzz Merkle paths.
+- Use property tests.
+- Keep the first circuit/program simple.
+- Add an external review before public claims.
+
+### 19.2 Classifier spoofing
+
+Risk:
+
+```text
+A non-Waldo crop passes the classifier.
+```
+
+Mitigations:
+
+- Hard negative mining.
+- Use high threshold.
+- Publish evaluation report.
+- Use constrained puzzle styles for MVP.
+- Make the proof statement honest: "passes classifier", not "is Waldo".
+
+### 19.3 Image preprocessing ambiguity
+
+Risk:
+
+```text
+Different machines produce different roots from the same image.
+```
+
+Mitigations:
+
+- Pin image decoder versions.
+- Prefer PNG.
+- Reject unsupported color modes.
+- Publish preprocessing spec.
+- Include `preprocessing_hash` as public input.
+
+### 19.4 Model/version ambiguity
+
+Risk:
+
+```text
+Prover uses a different model than verifier expects.
+```
+
+Mitigations:
+
+- Canonical model bundle.
+- Public `model_hash`.
+- Model hash checked inside proof or bound by verifier key.
+- Versioned model registry.
+
+### 19.5 Coordinate leakage
+
+Risk:
+
+```text
+Proof metadata reveals tile indices or path lengths.
+```
+
+Mitigations:
+
+- Fixed crop size.
+- Fixed number of Merkle paths.
+- Private path directions and indices.
+- Avoid public crop commitments unless carefully blinded.
+
+### 19.6 Low-entropy answer brute force
+
+If the only hidden data is `(x,y)`, the verifier could brute force coordinates in a non-ZK design.
+
+This design avoids that by keeping crop pixels, paths, and coordinates private inside the proof. Still, do not publish a crop hash without blinding if the image is public and the crop space is small.
+
+---
+
+## 20. Acceptance criteria for the complete project
+
+The project is complete when:
+
+```text
+1. A public puzzle image can be committed to image_root.
+2. A prover can choose private x,y and generate a proof.
+3. The proof verifies against image_root, model_hash, and threshold.
+4. The proof fails for invalid crops, invalid paths, wrong roots, and wrong model hashes.
+5. The verifier learns no location/crop/path data.
+6. The model evaluation report is published.
+7. The proof statement is worded honestly as classifier-based recognition.
+```
+
+---
+
+## 21. Suggested implementation order
+
+### Week 1: ML and image pipeline
+
+- Build crop generation tooling.
+- Train first tiny CNN.
+- Export and quantize ONNX.
+- Build image commitment library.
+- Create deterministic preprocessing spec.
+
+### Week 2: EZKL classifier proof
+
+- Generate EZKL proof for private crop inference.
+- Benchmark proving.
+- Iterate model size down until proving is tolerable.
+- Write classifier proof report.
+
+### Week 3: Merkle inclusion proof
+
+- Implement Poseidon Merkle tree.
+- Implement private Merkle inclusion in zkVM or circuit.
+- Prove private crop belongs to public root.
+- Test invalid paths and roots.
+
+### Week 4: End-to-end proof
+
+- Port quantized CNN to Rust guest.
+- Combine inclusion and inference.
+- Generate one end-to-end proof.
+- Build CLI verifier.
+- Write security notes.
+
+### Week 5+: Product polish
+
+- Web verifier.
+- Better model.
+- Hard negative mining.
+- Proof aggregation/on-chain verifier.
+- Demo puzzle.
+
+---
+
+## 22. Main engineering risks
+
+| Risk | Severity | Mitigation |
+|---|---:|---|
+| CNN too expensive to prove | High | Use 64x64 input, tiny CNN, logits only, benchmark early |
+| Classifier false positives | High | Hard negatives, high threshold, constrained demo image |
+| EZKL cannot compose with Merkle proof easily | High | Use zkVM for end-to-end MVP |
+| zkVM proof too slow | Medium/High | Shrink model, tile-align crops, optimize Rust inference |
+| Preprocessing inconsistencies | Medium | Fixed PNG/RGB rules, pinned versions, golden test vectors |
+| Privacy leakage from Merkle metadata | Medium | Keep indices and paths private, fixed path counts |
+| Copyright issues | Medium | Use synthetic/licensed dataset |
+| Under-constrained custom circuit | High | Prefer zkVM first, extensive negative tests, audit before public launch |
+
+---
+
+## 23. Practical model size targets
+
+Start with these limits:
+
+```text
+input: 64x64x3
+params: <= 50k
+conv layers: <= 3
+fully connected params: minimal
+output: one integer logit
+```
+
+If proving is too slow, reduce to:
+
+```text
+input: 48x48x3
+filters: 4, 8, 16
+crop alignment: tile-aligned only
+```
+
+If accuracy is too weak, improve data first, not model size:
+
+```text
+add hard negatives
+improve annotations
+augment positives
+train with focal loss or class weighting
+```
+
+Only increase model size after measuring proof cost.
+
+---
+
+## 24. Demo script
+
+A good demo flow:
+
+```text
+1. Show public puzzle image.
+2. Show image_root.
+3. Prover secretly clicks Waldo.
+4. Prover generates proof.
+5. Verifier checks proof.
+6. UI says: Valid proof. The prover knows a private crop in this image that passes the public Waldo detector.
+7. UI does not reveal the crop or coordinates.
+```
+
+CLI demo:
+
+```bash
+zk-waldo commit-image --image demo/puzzle.png --out demo/commitment.json
+zk-waldo prove --commitment demo/commitment.json --x 1234 --y 456 --out demo/proof.receipt
+zk-waldo verify --commitment demo/commitment.json --proof demo/proof.receipt
+```
+
+Expected output:
+
+```text
+Proof valid.
+Statement: prover knows a private crop from image_root that passes model_hash at threshold 8123.
+Location: hidden.
+Crop: hidden.
+```
+
+---
+
+## 25. References
+
+Current tooling and concepts to inspect before implementation:
+
+- EZKL docs: https://docs.ezkl.xyz/
+- EZKL GitHub: https://github.com/zkonduit/ezkl
+- RISC Zero docs: https://dev.risczero.com/
+- RISC Zero security model: https://dev.risczero.com/api/security-model
+- Jolt docs: https://a16z-jolt.mintlify.app/introduction
+- PyTorch ONNX export docs: https://docs.pytorch.org/docs/stable/onnx.html
+- ONNX Runtime quantization docs: https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html
+- Poseidon hash overview: https://www.poseidon-hash.info/
+- Poseidon in Circom example: https://docs.taceo.io/docs/examples/poseidon/
+
+---
+
+## 26. Final recommendation
+
+Do not try to build the final custom circuit first.
+
+Build in this order:
+
+```text
+1. Tiny CNN classifier outside ZK.
+2. EZKL proof for private crop inference.
+3. Poseidon Merkle commitment for the full image.
+4. zkVM end-to-end proof combining Merkle inclusion and integer CNN inference.
+5. Only then consider custom Halo2/EZKL composition for performance.
+```
+
+The most honest product claim is:
+
+```text
+This proof verifies that the prover knows a private crop from the committed image that passes the public Waldo classifier.
+```
+
+That is a real zero-knowledge Where's Waldo proof, as long as everyone agrees that the classifier is the definition of "Waldo" for the game.
