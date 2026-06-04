@@ -28,12 +28,12 @@ CHANNELS = 3
 CONV_WEIGHTS = FILTERS * KERNEL * KERNEL * CHANNELS
 DENSE_FEATURES = FILTERS * OUT_SIZE * OUT_SIZE
 PUZZLE_CATALOG = (
-    {"id": "cliffside-chaos", "title": "Cliffside Chaos", "dataset_index": 7, "source": "3.jpg", "x": 12, "y": 5},
-    {"id": "ski-slope", "title": "Ski Slope", "dataset_index": 10, "source": "6.jpg", "x": 15, "y": 4},
-    {"id": "castle-courtyard", "title": "Castle Courtyard", "dataset_index": 11, "source": "7.jpg", "x": 6, "y": 11},
-    {"id": "busy-boulevard", "title": "Busy Boulevard", "dataset_index": 14, "source": "9.jpg", "x": 1, "y": 12},
-    {"id": "museum-mayhem", "title": "Museum Mayhem", "dataset_index": 16, "source": "12.jpg", "x": 10, "y": 4},
-    {"id": "stadium-crowd", "title": "Stadium Crowd", "dataset_index": 17, "source": "13.jpg", "x": 13, "y": 5},
+    {"id": "knights-encampment", "title": "Knights' Encampment", "dataset_index": 7, "source": "3.jpg", "x": 12, "y": 5},
+    {"id": "musical-parade", "title": "Musical Parade", "dataset_index": 10, "source": "6.jpg", "x": 15, "y": 4},
+    {"id": "crowded-beach", "title": "Crowded Beach", "dataset_index": 11, "source": "7.jpg", "x": 6, "y": 11},
+    {"id": "feast-hall", "title": "Feast Hall", "dataset_index": 16, "source": "12.jpg", "x": 10, "y": 4},
+    {"id": "museum-mayhem", "title": "Museum Mayhem", "dataset_index": 14, "source": "9.jpg", "x": 1, "y": 12},
+    {"id": "train-station", "title": "Train Station", "dataset_index": 17, "source": "13.jpg", "x": 13, "y": 5},
 )
 SEED = 0x5A17D0
 

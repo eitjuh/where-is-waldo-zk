@@ -1,5 +1,5 @@
 {
-  "default_puzzle_id": "ski-slope",
+  "default_puzzle_id": "crowded-beach",
   "metrics": {
     "balanced_accuracy": 0.995,
     "catalog_false_positive_tiles": 0,
@@ -22,46 +22,46 @@
   "preprocessing_hash": "0xf3d3e0ae30bf900fbd768125ce991442c221725660ce0675d60c58cf96b922ac",
   "puzzles": [
     {
-      "id": "cliffside-chaos",
-      "image_id": "hey-waldo-real-cliffside-chaos",
-      "image_path": "apps/real-demo/assets/puzzles/cliffside-chaos.png",
+      "id": "knights-encampment",
+      "image_id": "hey-waldo-real-knights-encampment",
+      "image_path": "apps/real-demo/assets/puzzles/knights-encampment.png",
       "image_root": "0x6aa5b5f4fa793d95c8446d26b1b7f1593fd42eb4bc862d1e46d12971e8f2aeb5",
-      "title": "Cliffside Chaos"
+      "title": "Knights' Encampment"
     },
     {
-      "id": "ski-slope",
-      "image_id": "hey-waldo-real-ski-slope",
-      "image_path": "apps/real-demo/assets/puzzles/ski-slope.png",
+      "id": "musical-parade",
+      "image_id": "hey-waldo-real-musical-parade",
+      "image_path": "apps/real-demo/assets/puzzles/musical-parade.png",
       "image_root": "0x55474b93c8a462dbac5571a688d347a26401826bdb1842d51a006d3e3203e651",
-      "title": "Ski Slope"
+      "title": "Musical Parade"
     },
     {
-      "id": "castle-courtyard",
-      "image_id": "hey-waldo-real-castle-courtyard",
-      "image_path": "apps/real-demo/assets/puzzles/castle-courtyard.png",
+      "id": "crowded-beach",
+      "image_id": "hey-waldo-real-crowded-beach",
+      "image_path": "apps/real-demo/assets/puzzles/crowded-beach.png",
       "image_root": "0x8114deba8e9948e814b845ee60365fb4f39a4bceb6ce3b6d4e9cd7fe05943993",
-      "title": "Castle Courtyard"
+      "title": "Crowded Beach"
     },
     {
-      "id": "busy-boulevard",
-      "image_id": "hey-waldo-real-busy-boulevard",
-      "image_path": "apps/real-demo/assets/puzzles/busy-boulevard.png",
-      "image_root": "0xb44762146b8a323cce77baa4e04caf7d02fcf3b7e754a3042262937cbc858c11",
-      "title": "Busy Boulevard"
+      "id": "feast-hall",
+      "image_id": "hey-waldo-real-feast-hall",
+      "image_path": "apps/real-demo/assets/puzzles/feast-hall.png",
+      "image_root": "0x67458d5a3a6340f45bf321bbd8afe1ac1254126067915e047ffde7e5785a6c8c",
+      "title": "Feast Hall"
     },
     {
       "id": "museum-mayhem",
       "image_id": "hey-waldo-real-museum-mayhem",
       "image_path": "apps/real-demo/assets/puzzles/museum-mayhem.png",
-      "image_root": "0x67458d5a3a6340f45bf321bbd8afe1ac1254126067915e047ffde7e5785a6c8c",
+      "image_root": "0xb44762146b8a323cce77baa4e04caf7d02fcf3b7e754a3042262937cbc858c11",
       "title": "Museum Mayhem"
     },
     {
-      "id": "stadium-crowd",
-      "image_id": "hey-waldo-real-stadium-crowd",
-      "image_path": "apps/real-demo/assets/puzzles/stadium-crowd.png",
+      "id": "train-station",
+      "image_id": "hey-waldo-real-train-station",
+      "image_path": "apps/real-demo/assets/puzzles/train-station.png",
       "image_root": "0xa368581664291324798873840ad209c8ad70a733dff48b86edc9fd771661a253",
-      "title": "Stadium Crowd"
+      "title": "Train Station"
     }
   ],
   "schema": "zk-waldo-real-public-catalog-v1",

@@ -16,9 +16,9 @@
     "zkvm:demo": "pnpm demo && pnpm zkvm:prove && pnpm zkvm:verify",
     "real:train": "python3 scripts/train_real_cnn.py --dataset /tmp/hey-waldo --repo .",
     "real:prepare": "node scripts/prepare-real-demo.mjs",
-    "real:exec": "cargo run -p zk-waldo-zkvm-host -- exec-real --commitment demo/real/puzzles/ski-slope/commitment.json --witness demo/real/puzzles/ski-slope/witness.private.json",
-    "real:prove": "RISC0_PROVER=ipc cargo run -p zk-waldo-zkvm-host -- prove-real --commitment demo/real/puzzles/ski-slope/commitment.json --witness demo/real/puzzles/ski-slope/witness.private.json --receipt proofs/end_to_end_real.risc0.json",
-    "real:verify": "cargo run -p zk-waldo-zkvm-host -- verify-real --commitment demo/real/puzzles/ski-slope/commitment.json --receipt proofs/end_to_end_real.risc0.json",
+    "real:exec": "cargo run -p zk-waldo-zkvm-host -- exec-real --commitment demo/real/puzzles/crowded-beach/commitment.json --witness demo/real/puzzles/crowded-beach/witness.private.json",
+    "real:prove": "RISC0_PROVER=ipc cargo run -p zk-waldo-zkvm-host -- prove-real --commitment demo/real/puzzles/crowded-beach/commitment.json --witness demo/real/puzzles/crowded-beach/witness.private.json --receipt proofs/end_to_end_real.risc0.json",
+    "real:verify": "cargo run -p zk-waldo-zkvm-host -- verify-real --commitment demo/real/puzzles/crowded-beach/commitment.json --receipt proofs/end_to_end_real.risc0.json",
     "real:demo": "pnpm real:prepare && pnpm real:prove && pnpm real:verify",
     "real:serve": "node scripts/real-demo-server.mjs",
     "zk-waldo": "node src/cli.mjs"

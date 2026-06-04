@@ -16,7 +16,7 @@ import { decodePng } from "./png.mjs";
 import { realCnnLogit } from "./quantized-cnn.mjs";
 
 export const REAL_CONFIG = Object.freeze({
-  defaultPuzzleId: "ski-slope",
+  defaultPuzzleId: "crowded-beach",
   width: 1024,
   height: 1024,
   tileSize: 64,

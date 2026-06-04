@@ -20,7 +20,7 @@ function fixture() {
 test("real model and six-puzzle catalog load with their fixed public contract", async () => {
   const { model, puzzles, publicCatalog } = await fixture();
   assert.equal(puzzles.length, 6);
-  assert.equal(publicCatalog.default_puzzle_id, "ski-slope");
+  assert.equal(publicCatalog.default_puzzle_id, "crowded-beach");
   assert.equal(model.model_id, "waldo_real_tiny_cnn_v1");
   assert.equal(model.architecture.layers[0].op, "conv2d");
   assert.equal(model.architecture.layers[2].op, "flatten");

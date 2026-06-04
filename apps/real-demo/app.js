@@ -47,6 +47,13 @@ sendProofButton.addEventListener("click", sendGeneratedProof);
 verifyButton.addEventListener("click", () => void verifySubmittedProof());
 proofUpload.addEventListener("change", () => void loadUploadedProof());
 puzzleSelect.addEventListener("change", () => selectPuzzle(puzzleSelect.value));
+puzzleImage.addEventListener("error", () => {
+  setStatus(
+    proverStatus,
+    "Puzzle image not found — restart the demo server after catalog or asset changes",
+    "bad",
+  );
+});
 puzzleImage.addEventListener("load", refreshSelection);
 window.addEventListener("resize", refreshSelection);
 

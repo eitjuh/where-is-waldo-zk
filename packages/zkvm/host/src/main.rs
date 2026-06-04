@@ -978,9 +978,9 @@ Usage:
   cargo run -p zk-waldo-zkvm-host -- verify --commitment demo/commitment.json --receipt proofs/end_to_end_valid.risc0.json
   cargo run -p zk-waldo-zkvm-host -- prove-tiny --receipt proofs/end_to_end_tiny.risc0.json
   cargo run -p zk-waldo-zkvm-host -- verify-tiny --receipt proofs/end_to_end_tiny.risc0.json
-  cargo run -p zk-waldo-zkvm-host -- exec-real --commitment demo/real/puzzles/ski-slope/commitment.json --witness demo/real/puzzles/ski-slope/witness.private.json
-  cargo run -p zk-waldo-zkvm-host -- prove-real --commitment demo/real/puzzles/ski-slope/commitment.json --witness demo/real/puzzles/ski-slope/witness.private.json --receipt proofs/end_to_end_real.risc0.json
-  cargo run -p zk-waldo-zkvm-host -- verify-real --commitment demo/real/puzzles/ski-slope/commitment.json --receipt proofs/end_to_end_real.risc0.json
+  cargo run -p zk-waldo-zkvm-host -- exec-real --commitment demo/real/puzzles/crowded-beach/commitment.json --witness demo/real/puzzles/crowded-beach/witness.private.json
+  cargo run -p zk-waldo-zkvm-host -- prove-real --commitment demo/real/puzzles/crowded-beach/commitment.json --witness demo/real/puzzles/crowded-beach/witness.private.json --receipt proofs/end_to_end_real.risc0.json
+  cargo run -p zk-waldo-zkvm-host -- verify-real --commitment demo/real/puzzles/crowded-beach/commitment.json --receipt proofs/end_to_end_real.risc0.json
 "
     );
 }

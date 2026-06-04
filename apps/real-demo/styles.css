@@ -152,12 +152,16 @@ h2 {
 }
 
 .puzzle-frame {
-  position: relative;
   width: 100%;
   max-height: calc(100vh - 310px);
   overflow: auto;
   border: 1px solid var(--line);
   background: #e9e8e2;
+}
+
+.puzzle-canvas {
+  position: relative;
+  width: 100%;
 }
 
 .puzzle-picker {
@@ -194,6 +198,7 @@ h2 {
 
 .selection {
   position: absolute;
+  z-index: 1;
   pointer-events: none;
   border: 3px solid var(--red);
   background: rgb(185 40 49 / 12%);
@@ -203,9 +208,12 @@ h2 {
 .proof-progress {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: grid;
   place-content: center;
   gap: 10px;
+  padding: 16px;
+  overflow: visible;
   background: rgb(255 255 255 / 88%);
   color: var(--blue);
   text-align: center;
