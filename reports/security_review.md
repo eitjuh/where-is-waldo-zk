@@ -54,16 +54,32 @@ profiles as fast engineering fixtures. They are not the primary security claim.
 - The retained local-attestation profile is forgeable because its key is
   public.
 
-## Remaining Production Hardening
+## Production Hardening In This Repository
 
-1. Move proving into a local desktop process, browser-capable prover, or trusted
-   prover environment so a remote service never receives the selection.
-2. Train and evaluate on more licensed pages with a held-out page-level split,
-   adversarial tests, and a documented threshold policy.
-3. Replace SHA-256 Merkle hashing with a proof-efficient hash if benchmarks
-   justify it.
-4. Add a model registry or signed release process for the canonical model and
-   preprocessing hashes.
-5. Audit the guest relation and host/public-input binding before public use.
-6. Evaluate EZKL or a custom circuit only as a performance/composition
-   alternative; the real end-to-end RISC Zero integration is already complete.
+1. **Client-built witnesses** — the browser bundle constructs the private
+   witness locally; the default server rejects coordinate-only prove requests.
+2. **Server defaults** — bind to loopback, security headers, prove rate limits,
+   catalog reload on `/api/real/config`, and optional legacy coordinate mode via
+   `ZK_WALDO_ALLOW_COORDINATE_WITNESS=1`.
+3. **Local CLI proving** — `pnpm real:prove:local` runs the host prover without
+   HTTP coordinate APIs.
+4. **Model registry** — `models/registry.json` pins `model_hash`,
+   `preprocessing_hash`, and `threshold_logit` for verifiers.
+5. **Holdout training policy** — `train_real_cnn.py` excludes non-catalog Hey-Waldo
+   pages from training positives/negatives and records `holdout_*` metrics.
+6. **Holdout eval script** — `pnpm real:eval:holdout` writes
+   `reports/holdout_eval.json` for pages outside the six-page catalog.
+7. **Signed model registry** — Ed25519 signature over `models/registry.json`
+   verified at load time; `pnpm audit:guest` checks Rust guest constants.
+8. **Local prove daemon** — `pnpm real:prove:daemon` on loopback; browser prefers
+   it before the demo server prove endpoint.
+9. **CI** — GitHub Actions runs `pnpm test`, `pnpm audit:guest`, `pnpm real:bundle`,
+   and `cargo test --workspace`.
+
+## Remaining Before A Public Proving Service
+
+1. Run `pnpm real:prove:daemon` on the user machine so witness JSON never crosses
+   the public internet (default UI path).
+2. Optional Poseidon Merkle v2 for cycle count (requires new public roots).
+3. External third-party audit of the guest relation beyond `pnpm audit:guest`.
+4. Expand the catalog beyond six pages with additional licensed training data.

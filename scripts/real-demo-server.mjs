@@ -5,26 +5,30 @@ import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import {
-  generateRealWitness,
-  prepareRealCatalog,
-  realPublicSummary,
-  validateRealProofPrivacy,
-} from "../src/real-demo.mjs";
-import { realCnnLogit } from "../src/quantized-cnn.mjs";
-import { bytesToHex, hexToBytes, prettyJson } from "../src/shared-core.mjs";
+  loadPublicConfigPayload,
+  loadRealCatalogSnapshot,
+} from "../src/real-catalog-runtime.mjs";
+import { validateRealProofPrivacy } from "../src/real-demo.mjs";
+import { proveRealWitness } from "../src/real-prove.mjs";
+import { bytesToHex, prettyJson } from "../src/shared-core.mjs";
+import { generateRealWitness } from "../src/witness-core.mjs";
 
 const root = resolve(".");
 const webRoot = resolve("apps/real-demo");
 const host = process.env.HOST ?? "127.0.0.1";
 const port = Number.parseInt(process.env.PORT ?? "4174", 10);
 const runtimeRoot = resolve("demo/real/runtime");
-const catalog = await prepareRealCatalog();
-const contextsById = new Map(catalog.puzzles.map((puzzle) => [puzzle.id, puzzle]));
-const contextsByRoot = new Map(
-  catalog.puzzles.map((puzzle) => [puzzle.commitment.image_root, puzzle]),
-);
-const defaultContext = contextsById.get(catalog.publicCatalog.default_puzzle_id);
+const allowCoordinateWitness = process.env.ZK_WALDO_ALLOW_COORDINATE_WITNESS === "1";
+const trustRemote = process.env.ZK_WALDO_TRUST_REMOTE === "1";
+
+if (host === "0.0.0.0" && !trustRemote) {
+  console.error("Refusing to bind 0.0.0.0 without ZK_WALDO_TRUST_REMOTE=1.");
+  process.exit(1);
+}
+
+let snapshot = await loadRealCatalogSnapshot();
 let proving = false;
+const proveBuckets = new Map();
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -36,24 +40,18 @@ const mime = {
 };
 
 const server = createServer(async (request, response) => {
+  applySecurityHeaders(response);
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if (request.method === "GET" && url.pathname === "/healthz") {
+      return sendJson(response, 200, { ok: true, backend: "risc0-zkvm-3.0.5-real-cnn" });
+    }
     if (request.method === "GET" && url.pathname === "/api/real/config") {
-      return sendJson(response, 200, {
-        ...realPublicSummary(defaultContext),
-        default_puzzle_id: catalog.publicCatalog.default_puzzle_id,
-        puzzles: catalog.puzzles.map((puzzle) => ({
-          id: puzzle.id,
-          title: puzzle.title,
-          image_url: `/assets/puzzles/${puzzle.id}.png`,
-          image_id: puzzle.commitment.image_id,
-          image_root: puzzle.commitment.image_root,
-        })),
-        backend: "risc0-zkvm-3.0.5-real-cnn",
-      });
+      snapshot = await loadRealCatalogSnapshot();
+      return sendJson(response, 200, await loadPublicConfigPayload(snapshot));
     }
     if (request.method === "POST" && url.pathname === "/api/real/prove") {
-      return await proveSelection(request, response);
+      return await proveWitness(request, response);
     }
     if (request.method === "POST" && url.pathname === "/api/real/verify") {
       return await verifySubmittedProof(request, response);
@@ -69,77 +67,67 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`zk-waldo real CNN demo: http://${host}:${port}/`);
+  console.log(
+    allowCoordinateWitness
+      ? "Warning: coordinate-based witness building is enabled (not for production)."
+      : "Prove API accepts client-built witnesses only; coordinates stay in the browser.",
+  );
 });
 
-async function proveSelection(request, response) {
+async function proveWitness(request, response) {
   if (proving) {
     return sendJson(response, 409, { error: "A proof is already being generated." });
   }
+  if (!allowRemoteProve(request)) {
+    return sendJson(response, 403, {
+      error: "Remote proving is disabled. Run the prover on localhost or set ZK_WALDO_TRUST_REMOTE=1.",
+    });
+  }
+  if (!consumeProveBudget(request)) {
+    return sendJson(response, 429, { error: "Prove rate limit exceeded. Try again shortly." });
+  }
+
   proving = true;
-  let session;
   try {
-    const body = await readJsonBody(request);
-    const context = contextsById.get(body.puzzle_id);
+    snapshot = await loadRealCatalogSnapshot();
+    const body = await readJsonBody(request, 500_000);
+    const context = snapshot.contextsById.get(body.puzzle_id);
     if (!context) {
       return sendJson(response, 400, { error: "Unknown puzzle selection." });
     }
-    const x = Number(body.x);
-    const y = Number(body.y);
-    if (!Number.isInteger(x) || !Number.isInteger(y)) {
-      return sendJson(response, 400, { error: "x and y must be integer pixel coordinates." });
-    }
-    const witness = generateRealWitness({
-      pixels: context.puzzle.pixels,
-      commitment: context.commitment,
-      x,
-      y,
-      config: context.config,
-    });
-    const logit = realCnnLogit(hexToBytes(witness.crop_pixels), context.model);
-    if (logit < context.model.threshold_logit) {
-      return sendJson(response, 422, {
-        error: "The trained CNN rejected that private tile.",
-        code: "CNN_REJECTED",
-      });
-    }
 
-    session = await makeSession("prove");
-    const witnessPath = join(session, "witness.private.json");
-    const receiptPath = join(session, "proof.risc0.json");
-    await writeFile(witnessPath, prettyJson(witness), "utf8");
-    const output = await runHost(
-      [
-        "run",
-        "-p",
-        "zk-waldo-zkvm-host",
-        "--",
-        "prove-real",
-        "--commitment",
-        context.config.commitmentPath,
-        "--witness",
-        witnessPath,
-        "--receipt",
-        receiptPath,
-      ],
-      { RISC0_PROVER: "ipc" },
-    );
-    const proof = JSON.parse(await readFile(receiptPath, "utf8"));
-    validateRealProofPrivacy(proof);
-    sendJson(response, 200, {
-      proof,
-      puzzle: { id: context.id, title: context.title },
-      prover: {
-        backend: proof.backend,
-        prove_ms: proof.prove_ms,
-        output: output.trim(),
-      },
+    const witness = await resolveWitness(body, context);
+    const result = await proveRealWitness({
+      witness,
+      context,
+      runtimeRoot: join(runtimeRoot, "remote-prover"),
     });
+    sendJson(response, 200, result);
   } finally {
     proving = false;
-    if (session) {
-      await rm(session, { recursive: true, force: true });
-    }
   }
+}
+
+async function resolveWitness(body, context) {
+  if (body.witness) {
+    return body.witness;
+  }
+  if (!allowCoordinateWitness) {
+    throw new Error(
+      "Send a client-built witness. Coordinate-based proving is disabled on this server.",
+    );
+  }
+  const x = Number(body.x);
+  const y = Number(body.y);
+  if (!Number.isInteger(x) || !Number.isInteger(y)) {
+    throw new Error("x and y must be integer pixel coordinates when witness is omitted.");
+  }
+  return generateRealWitness({
+    pixels: context.puzzle.pixels,
+    commitment: context.commitment,
+    x,
+    y,
+  });
 }
 
 async function verifySubmittedProof(request, response) {
@@ -148,6 +136,7 @@ async function verifySubmittedProof(request, response) {
     const body = await readJsonBody(request, 2_000_000);
     const proof = body.proof ?? body;
     validateRealProofPrivacy(proof);
+    snapshot = await loadRealCatalogSnapshot();
     const context = contextForProof(proof);
     session = await makeSession("verify");
     const receiptPath = join(session, "submitted-proof.risc0.json");
@@ -180,6 +169,37 @@ async function verifySubmittedProof(request, response) {
   }
 }
 
+function allowRemoteProve(request) {
+  if (trustRemote || host === "127.0.0.1" || host === "localhost") {
+    return true;
+  }
+  const remote = request.socket.remoteAddress;
+  return remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+}
+
+function consumeProveBudget(request) {
+  const key = request.socket.remoteAddress ?? "unknown";
+  const now = Date.now();
+  const windowMs = 60_000;
+  const limit = Number.parseInt(process.env.ZK_WALDO_PROVE_RATE_LIMIT ?? "6", 10);
+  const bucket = proveBuckets.get(key) ?? [];
+  const recent = bucket.filter((stamp) => now - stamp < windowMs);
+  if (recent.length >= limit) {
+    proveBuckets.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  proveBuckets.set(key, recent);
+  return true;
+}
+
+function applySecurityHeaders(response) {
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+}
+
 function serveStatic(pathname, response) {
   const normalized = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const filePath = resolve(join(webRoot, normalized));
@@ -209,7 +229,7 @@ function contextForProof(proof) {
   ) {
     throw new Error("Proof does not contain a valid public image root.");
   }
-  const context = contextsByRoot.get(bytesToHex(Uint8Array.from(root)));
+  const context = snapshot.contextsByRoot.get(bytesToHex(Uint8Array.from(root)));
   if (!context) {
     throw new Error("Proof image root is not in this puzzle catalog.");
   }

@@ -16,8 +16,10 @@ statement to its journal.
 Prerequisites are Node.js 20+, pnpm, Rust, and the RISC Zero `r0vm` component.
 
 ```bash
+pnpm install
 pnpm real:prepare
-pnpm real:serve
+pnpm real:prove:daemon   # terminal 1: loopback prover
+pnpm real:serve          # terminal 2: verifier UI
 ```
 
 Open:
@@ -31,9 +33,11 @@ click generates a real RISC Zero proof in about 20 seconds on the development
 machine. Copy, download, or send the proof to the Verifier side, which
 automatically identifies the committed page from the proof's public image root.
 
-The demo server is a local prover process. If it is hosted remotely, that
-server sees the clicked coordinates. A production deployment should run the
-prover locally or in a trusted prover environment.
+The demo builds the private witness in the browser and proves through the
+loopback daemon (`pnpm real:prove:daemon`) by default. Coordinates are not
+accepted by the server unless `ZK_WALDO_ALLOW_COORDINATE_WITNESS=1`. Published
+models are pinned and signed in `models/registry.json`. See
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`NOTICE.md`](./NOTICE.md).
 
 ## Real Proof Commands
 
@@ -85,9 +89,8 @@ pnpm real:train
 pnpm real:prepare
 ```
 
-The Hey-Waldo repository labels the dataset ODbL 1.0. The underlying Where's
-Waldo artwork remains third-party copyrighted material; verify distribution
-rights before publishing the included demo asset.
+The Hey-Waldo repository labels the dataset ODbL 1.0. Artwork redistribution
+for the bundled demo pages is documented in [`NOTICE.md`](./NOTICE.md).
 
 ## What Is Public And Private
 

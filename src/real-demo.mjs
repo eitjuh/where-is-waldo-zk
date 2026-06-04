@@ -2,18 +2,18 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
-  assertAlignedCrop,
-  bytesToHex,
-  extractCropFromPixels,
   hexToBytes,
   inspectProofPrivacy,
   prettyJson,
   stableJson,
   textBytes,
 } from "./shared-core.mjs";
-import { buildMerkleTree, getMerklePath, splitTiles } from "./merkle.mjs";
 import { decodePng } from "./png.mjs";
 import { realCnnLogit } from "./quantized-cnn.mjs";
+import { findRegistryModel, loadSignedModelRegistry } from "./model-registry.mjs";
+import { commitRealPixels, generateRealWitness, validateRealWitness } from "./witness-core.mjs";
+
+export { commitRealPixels, generateRealWitness, validateRealWitness };
 
 export const REAL_CONFIG = Object.freeze({
   defaultPuzzleId: "crowded-beach",
@@ -59,6 +59,14 @@ export async function loadRealModel(path = REAL_CONFIG.modelPath) {
   if (preprocessingHash !== claimedPreprocessingHash) {
     throw new Error("real CNN preprocessing_hash does not match its canonical spec");
   }
+  const registry = await loadSignedModelRegistry();
+  const entry = findRegistryModel(registry, model.model_id);
+  if (entry.model_hash !== claimedModelHash || entry.preprocessing_hash !== claimedPreprocessingHash) {
+    throw new Error("published model bundle does not match the signed registry entry");
+  }
+  if (entry.threshold_logit !== model.threshold_logit) {
+    throw new Error("published model threshold does not match the signed registry entry");
+  }
   return model;
 }
 
@@ -71,81 +79,6 @@ export async function loadRealPuzzle(path) {
     throw new Error(`expected ${REAL_CONFIG.width}x${REAL_CONFIG.height} real puzzle image`);
   }
   return png;
-}
-
-export function commitRealPixels({ pixels, model, config = REAL_CONFIG }) {
-  const { tileColumns, tileRows, tiles } = splitTiles({
-    pixels,
-    width: config.width,
-    height: config.height,
-    tileSize: config.tileSize,
-  });
-  const tree = buildMerkleTree(tiles.map((tile) => tile.leaf));
-  return {
-    schema: "zk-waldo-image-commitment-v1",
-    image_id: config.imageId,
-    image_width: config.width,
-    image_height: config.height,
-    crop_width: config.cropSize,
-    crop_height: config.cropSize,
-    tile_size: config.tileSize,
-    tile_columns: tileColumns,
-    tile_rows: tileRows,
-    leaf_count: tiles.length,
-    hash_function: "sha256-domain-separated-v0",
-    image_root: bytesToHex(tree.root),
-    preprocessing_hash: model.preprocessing_hash,
-  };
-}
-
-export function generateRealWitness({ pixels, commitment, x, y, config = REAL_CONFIG }) {
-  assertAlignedCrop({
-    x,
-    y,
-    imageWidth: config.width,
-    imageHeight: config.height,
-    cropSize: config.cropSize,
-    tileSize: config.tileSize,
-  });
-  const { tileColumns, tiles } = splitTiles({
-    pixels,
-    width: config.width,
-    height: config.height,
-    tileSize: config.tileSize,
-  });
-  const tree = buildMerkleTree(tiles.map((tile) => tile.leaf));
-  if (bytesToHex(tree.root) !== commitment.image_root) {
-    throw new Error("real puzzle bytes do not match the public image commitment");
-  }
-  const tileX = x / config.tileSize;
-  const tileY = y / config.tileSize;
-  const leafIndex = tileY * tileColumns + tileX;
-  const tile = tiles[leafIndex];
-  const cropPixels = extractCropFromPixels(
-    pixels,
-    config.width,
-    config.height,
-    x,
-    y,
-    config.cropSize,
-  );
-  return {
-    schema: "zk-waldo-private-witness-v1",
-    x,
-    y,
-    crop_width: config.cropSize,
-    crop_height: config.cropSize,
-    crop_pixels: bytesToHex(cropPixels),
-    tiles: [
-      {
-        tile_x: tileX,
-        tile_y: tileY,
-        leaf_index: leafIndex,
-        pixels: bytesToHex(tile.pixels),
-        merkle_path: getMerklePath(tree, leafIndex),
-      },
-    ],
-  };
 }
 
 export async function prepareRealDemo({
@@ -166,7 +99,17 @@ export async function prepareRealDemo({
     y ??= puzzle.y;
   }
   const [model, puzzle] = await Promise.all([loadRealModel(config.modelPath), loadRealPuzzle(config.imagePath)]);
-  const commitment = commitRealPixels({ pixels: puzzle.pixels, model, config });
+  const commitment = commitRealPixels({
+    pixels: puzzle.pixels,
+    model,
+    config: {
+      imageId: config.imageId,
+      width: config.width,
+      height: config.height,
+      tileSize: config.tileSize,
+      cropSize: config.cropSize,
+    },
+  });
   await writeJson(config.commitmentPath, commitment);
 
   let witness;
@@ -188,7 +131,17 @@ export async function prepareRealCatalog({ writeWitnesses = false } = {}) {
   for (const entry of privateCatalog.puzzles) {
     const config = realPuzzleConfig(entry);
     const puzzle = await loadRealPuzzle(config.imagePath);
-    const commitment = commitRealPixels({ pixels: puzzle.pixels, model, config });
+    const commitment = commitRealPixels({
+      pixels: puzzle.pixels,
+      model,
+      config: {
+        imageId: config.imageId,
+        width: config.width,
+        height: config.height,
+        tileSize: config.tileSize,
+        cropSize: config.cropSize,
+      },
+    });
     await writeJson(config.commitmentPath, commitment);
     const witness = generateRealWitness({
       pixels: puzzle.pixels,

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   bytesToHex,
   concatBytes,
@@ -6,9 +5,10 @@ import {
   textBytes,
   u32be,
 } from "./shared-core.mjs";
+import { sha256Bytes as hashSha256 } from "./sha256.mjs";
 
 export function sha256Bytes(bytes) {
-  return new Uint8Array(createHash("sha256").update(bytes).digest());
+  return hashSha256(bytes);
 }
 
 export function sha256Hex(bytes) {

@@ -1,0 +1,18 @@
+{
+  "models": [
+    {
+      "artifact_path": "models/artifacts/waldo_cnn_quantized.json",
+      "model_hash": "0xba6a1c74c722b21fb49ab66991494dbf1e15aca855138b0baaa8b9c44437a043",
+      "model_id": "waldo_real_tiny_cnn_v1",
+      "notes": "Trained on Hey-Waldo with six demo pages in-catalog hard-negative mining. Not a broad generalization claim.",
+      "preprocessing_hash": "0xf3d3e0ae30bf900fbd768125ce991442c221725660ce0675d60c58cf96b922ac",
+      "release": "demo-catalog-v1",
+      "status": "published",
+      "threshold_logit": 2823294
+    }
+  ],
+  "schema": "zk-waldo-model-registry-v1",
+  "signature": "gRo1AxxqGboudiGuQoFCQAWmSYQ6wKLBhyVM2EOIH+Y7Ujutt5cAqBi/GOREPKNTj/Tvr6ND2Mj8YaqM/GtBDA==",
+  "signed_at": "2026-06-04T00:00:00.000Z",
+  "signing_key_id": "zk-waldo-release-v1"
+}

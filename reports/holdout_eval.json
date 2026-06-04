@@ -1,0 +1,13 @@
+{
+  "schema": "zk-waldo-holdout-eval-v1",
+  "catalog_pages": 6,
+  "holdout_positive_samples": 33,
+  "holdout_negative_samples": 500,
+  "threshold_logit": 2823294,
+  "holdout_positive_logit_min": 2823294,
+  "holdout_positive_logit_max": 9339569,
+  "holdout_negative_logit_max": 6713768,
+  "holdout_positive_recall": 1.0,
+  "holdout_negative_recall": 0.978,
+  "note": "Holdout uses dataset indices not present in the demo catalog; this is a sanity check, not a production SLA."
+}

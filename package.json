@@ -15,12 +15,20 @@
     "zkvm:verify:full": "cargo run -p zk-waldo-zkvm-host -- verify --commitment demo/commitment.json --receipt proofs/end_to_end_valid.risc0.json",
     "zkvm:demo": "pnpm demo && pnpm zkvm:prove && pnpm zkvm:verify",
     "real:train": "python3 scripts/train_real_cnn.py --dataset /tmp/hey-waldo --repo .",
-    "real:prepare": "node scripts/prepare-real-demo.mjs",
+    "real:prepare": "node scripts/prepare-real-demo.mjs && pnpm real:bundle",
+    "real:bundle": "node scripts/bundle-witness-client.mjs",
+    "real:prove:local": "node scripts/local-prove.mjs crowded-beach 384 704",
+    "real:eval:holdout": "python3 scripts/eval_holdout.py --dataset /tmp/hey-waldo --repo .",
+    "check": "pnpm test && pnpm audit:guest && cargo test --workspace",
     "real:exec": "cargo run -p zk-waldo-zkvm-host -- exec-real --commitment demo/real/puzzles/crowded-beach/commitment.json --witness demo/real/puzzles/crowded-beach/witness.private.json",
     "real:prove": "RISC0_PROVER=ipc cargo run -p zk-waldo-zkvm-host -- prove-real --commitment demo/real/puzzles/crowded-beach/commitment.json --witness demo/real/puzzles/crowded-beach/witness.private.json --receipt proofs/end_to_end_real.risc0.json",
     "real:verify": "cargo run -p zk-waldo-zkvm-host -- verify-real --commitment demo/real/puzzles/crowded-beach/commitment.json --receipt proofs/end_to_end_real.risc0.json",
     "real:demo": "pnpm real:prepare && pnpm real:prove && pnpm real:verify",
     "real:serve": "node scripts/real-demo-server.mjs",
+    "real:prove:daemon": "node scripts/local-prove-daemon.mjs",
+    "real:release:keygen": "node scripts/generate-release-key.mjs",
+    "real:release:sign": "node scripts/sign-model-registry.mjs",
+    "audit:guest": "node scripts/audit-guest-bindings.mjs",
     "zk-waldo": "node src/cli.mjs"
   },
   "bin": {
@@ -28,5 +36,12 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
   }
 }

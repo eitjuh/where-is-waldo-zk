@@ -6,7 +6,9 @@ import {
   prepareRealCatalog,
   REAL_CONFIG,
   validateRealProofPrivacy,
+  validateRealWitness,
 } from "../src/real-demo.mjs";
+import { loadSignedModelRegistry } from "../src/model-registry.mjs";
 import { realCnnLogit } from "../src/quantized-cnn.mjs";
 import { extractCropFromPixels, hexToBytes, inspectProofPrivacy } from "../src/shared-core.mjs";
 
@@ -16,6 +18,12 @@ function fixture() {
   fixturePromise ??= prepareRealCatalog();
   return fixturePromise;
 }
+
+test("signed model registry matches the published CNN bundle", async () => {
+  const registry = await loadSignedModelRegistry();
+  assert.equal(registry.models.length, 1);
+  assert.ok(registry.signature);
+});
 
 test("real model and six-puzzle catalog load with their fixed public contract", async () => {
   const { model, puzzles, publicCatalog } = await fixture();
@@ -53,6 +61,33 @@ test("trained quantized CNN accepts exactly one labeled Waldo tile on every cata
     }
     assert.deepEqual(accepted, [{ x: entry.witness.x, y: entry.witness.y }], entry.id);
   }
+});
+
+test("validateRealWitness accepts a catalog witness with its public image root", async () => {
+  const { puzzles } = await fixture();
+  const entry = puzzles[0];
+  const witness = generateRealWitness({
+    pixels: entry.puzzle.pixels,
+    commitment: entry.commitment,
+    x: entry.witness.x,
+    y: entry.witness.y,
+  });
+  assert.doesNotThrow(() => validateRealWitness(witness, entry.commitment));
+});
+
+test("validateRealWitness rejects a crop that does not match its tile", async () => {
+  const { puzzles } = await fixture();
+  const entry = puzzles[0];
+  const witness = generateRealWitness({
+    pixels: entry.puzzle.pixels,
+    commitment: entry.commitment,
+    x: entry.witness.x,
+    y: entry.witness.y,
+    config: entry.config,
+  });
+  const tampered = structuredClone(witness);
+  tampered.crop_pixels = `${witness.crop_pixels.slice(0, -2)}00`;
+  assert.throws(() => validateRealWitness(tampered, entry.commitment), /crop must equal/);
 });
 
 test("every catalog private witness binds its selected crop to its public image root", async () => {

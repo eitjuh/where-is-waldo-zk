@@ -35,7 +35,17 @@ PUZZLE_CATALOG = (
     {"id": "museum-mayhem", "title": "Museum Mayhem", "dataset_index": 14, "source": "9.jpg", "x": 1, "y": 12},
     {"id": "train-station", "title": "Train Station", "dataset_index": 17, "source": "13.jpg", "x": 13, "y": 5},
 )
+CATALOG_DATASET_INDICES = frozenset(entry["dataset_index"] for entry in PUZZLE_CATALOG)
+HOLDOUT_DATASET_INDICES = frozenset(range(1, 20)) - CATALOG_DATASET_INDICES
 SEED = 0x5A17D0
+
+
+def dataset_index_from_sample(path: Path) -> int:
+    return int(path.name.split("_", 1)[0])
+
+
+def is_holdout_sample(path: Path) -> bool:
+    return dataset_index_from_sample(path) in HOLDOUT_DATASET_INDICES
 
 
 def parse_args() -> argparse.Namespace:
@@ -450,8 +460,14 @@ def main() -> None:
     rng = random.Random(SEED)
     dataset = Path(args.dataset).resolve()
     repo = Path(args.repo).resolve()
-    positives = [load_sample(path) for path in sorted((dataset / "64/waldo").glob("*.jpg"))]
-    negative_paths = sorted((dataset / "64/notwaldo").glob("*.jpg"))
+    positives = [
+        load_sample(path)
+        for path in sorted((dataset / "64/waldo").glob("*.jpg"))
+        if not is_holdout_sample(path)
+    ]
+    negative_paths = sorted(
+        path for path in (dataset / "64/notwaldo").glob("*.jpg") if not is_holdout_sample(path)
+    )
     rng.shuffle(negative_paths)
     negative_train = [load_sample(path) for path in negative_paths[: args.negative_train]]
     negative_val = [
@@ -517,6 +533,17 @@ def main() -> None:
     else:
         threshold = min(catalog_target_scores)
         metrics["threshold_adjustment"] = "lowered to accept every catalog Waldo target"
+    holdout_targets = [
+        load_sample(path)
+        for path in sorted((dataset / "64/waldo").glob("*.jpg"))
+        if is_holdout_sample(path)
+    ]
+    holdout_negatives = sorted(
+        path for path in (dataset / "64/notwaldo").glob("*.jpg") if is_holdout_sample(path)
+    )[:500]
+    holdout_positive_scores = [quantized_logit(sample, quantized) for sample in holdout_targets]
+    holdout_negative_scores = [quantized_logit(load_sample(path), quantized) for path in holdout_negatives]
+
     metrics.update(
         {
             "positive_samples": len(positives),
@@ -530,6 +557,19 @@ def main() -> None:
             "negative_logit_max": max(negative_scores),
             "catalog_puzzles": len(PUZZLE_CATALOG),
             "catalog_false_positive_tiles": sum(score >= threshold for score in catalog_negative_scores),
+            "holdout_dataset_indices": sorted(HOLDOUT_DATASET_INDICES),
+            "holdout_positive_samples": len(holdout_positive_scores),
+            "holdout_negative_samples": len(holdout_negative_scores),
+            "holdout_positive_recall": (
+                sum(score >= threshold for score in holdout_positive_scores) / len(holdout_positive_scores)
+                if holdout_positive_scores
+                else None
+            ),
+            "holdout_negative_recall": (
+                sum(score < threshold for score in holdout_negative_scores) / len(holdout_negative_scores)
+                if holdout_negative_scores
+                else None
+            ),
         }
     )
     print("quantized metrics:", json.dumps(metrics, sort_keys=True))

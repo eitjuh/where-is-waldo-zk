@@ -1,3 +1,5 @@
+import { buildWitnessFromClick } from "./witness-client.bundle.js";
+
 const puzzleImage = document.querySelector("#puzzleImage");
 const selection = document.querySelector("#selection");
 const proofProgress = document.querySelector("#proofProgress");
@@ -32,12 +34,12 @@ async function initialize() {
   }
   puzzleCount.textContent = `${config.puzzles.length} pages`;
   puzzleSelect.value = config.default_puzzle_id;
-  selectPuzzle(config.default_puzzle_id);
+  await selectPuzzle(config.default_puzzle_id);
   document.querySelector("#modelBadge").textContent =
     `${config.model_id} · ${(config.metrics.balanced_accuracy * 100).toFixed(1)}% balanced accuracy`;
   document.querySelector("#modelHash").textContent = config.model_hash;
   document.querySelector("#threshold").textContent = String(config.threshold_logit);
-  setStatus(proverStatus, "Ready · select Waldo", "idle");
+  setStatus(proverStatus, "Ready · select Waldo (witness stays local until prove)", "idle");
 }
 
 puzzleImage.addEventListener("click", (event) => void handlePuzzleClick(event));
@@ -46,7 +48,7 @@ downloadProofButton.addEventListener("click", downloadGeneratedProof);
 sendProofButton.addEventListener("click", sendGeneratedProof);
 verifyButton.addEventListener("click", () => void verifySubmittedProof());
 proofUpload.addEventListener("change", () => void loadUploadedProof());
-puzzleSelect.addEventListener("change", () => selectPuzzle(puzzleSelect.value));
+puzzleSelect.addEventListener("change", () => void selectPuzzle(puzzleSelect.value));
 puzzleImage.addEventListener("error", () => {
   setStatus(
     proverStatus,
@@ -57,12 +59,13 @@ puzzleImage.addEventListener("error", () => {
 puzzleImage.addEventListener("load", refreshSelection);
 window.addEventListener("resize", refreshSelection);
 
-function selectPuzzle(puzzleId) {
+async function selectPuzzle(puzzleId) {
   currentPuzzle = config.puzzles.find((puzzle) => puzzle.id === puzzleId);
   if (!currentPuzzle) {
     return;
   }
   puzzleImage.src = currentPuzzle.image_url;
+  await imageReady(puzzleImage);
   document.querySelector("#rootBadge").textContent = currentPuzzle.image_root;
   if (verifiedPuzzle.textContent === "—") {
     document.querySelector("#imageRoot").textContent = currentPuzzle.image_root;
@@ -94,17 +97,45 @@ async function generateProof(x, y) {
   proofProgress.hidden = false;
   generatedProof.value = "";
   setProofActions(false);
-  setStatus(proverStatus, "Running private CNN and prover", "busy");
+  setStatus(proverStatus, "Building private witness in browser", "busy");
   try {
-    const result = await requestJson("/api/real/prove", {
-      method: "POST",
-      body: JSON.stringify({ puzzle_id: currentPuzzle.id, x, y }),
+    const witness = await buildWitnessFromClick({
+      imageUrl: currentPuzzle.image_url,
+      commitment: currentPuzzle.commitment,
+      x,
+      y,
     });
+    const body = JSON.stringify({ puzzle_id: currentPuzzle.id, witness });
+    let result;
+    let provedLocally = false;
+    if (config.prefer_local_prover !== false) {
+      try {
+        setStatus(proverStatus, "Running local RISC Zero prover on loopback", "busy");
+        result = await requestJson(config.local_prover_url, {
+          method: "POST",
+          body,
+        });
+        provedLocally = true;
+      } catch (localError) {
+        if (config.require_local_prover) {
+          throw new Error(
+            `${localError.message} Start the local prover with: pnpm real:prove:daemon`,
+          );
+        }
+      }
+    }
+    if (!result) {
+      setStatus(proverStatus, "Local prover unavailable; using demo server", "busy");
+      result = await requestJson("/api/real/prove", {
+        method: "POST",
+        body,
+      });
+    }
     generatedProof.value = JSON.stringify(result.proof, null, 2);
     setProofActions(true);
     setStatus(
       proverStatus,
-      `${result.puzzle.title} proof · ${(result.prover.prove_ms / 1000).toFixed(1)}s`,
+      `${result.puzzle.title} proof · ${(result.prover.prove_ms / 1000).toFixed(1)}s${provedLocally ? " · local" : ""}`,
       "ok",
     );
   } catch (error) {
@@ -119,6 +150,18 @@ async function generateProof(x, y) {
     proofInFlight = false;
     puzzleSelect.disabled = false;
   }
+}
+
+function imageReady(image) {
+  if (image.complete && image.naturalWidth > 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    image.addEventListener("load", () => resolve(), { once: true });
+    image.addEventListener("error", () => reject(new Error("puzzle image failed to load")), {
+      once: true,
+    });
+  });
 }
 
 function showSelection(x, y) {
