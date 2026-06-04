@@ -39,6 +39,13 @@ async function initialize() {
     `${config.model_id} · ${(config.metrics.balanced_accuracy * 100).toFixed(1)}% balanced accuracy`;
   document.querySelector("#modelHash").textContent = config.model_hash;
   document.querySelector("#threshold").textContent = String(config.threshold_logit);
+  const proveHint = document.querySelector("#proveHint");
+  if (config.server_prove_hint) {
+    proveHint.textContent = config.server_prove_hint;
+    proveHint.hidden = false;
+  } else {
+    proveHint.hidden = true;
+  }
   setStatus(proverStatus, "Ready · select Waldo (witness stays local until prove)", "idle");
 }
 
@@ -125,11 +132,12 @@ async function generateProof(x, y) {
       }
     }
     if (!result) {
-      setStatus(proverStatus, "Local prover unavailable; using demo server", "busy");
-      result = await requestJson("/api/real/prove", {
+      setStatus(proverStatus, "Generating proof on server…", "busy");
+      const started = await requestJson("/api/real/prove", {
         method: "POST",
         body,
       });
+      result = await pollProveJob(started);
     }
     generatedProof.value = JSON.stringify(result.proof, null, 2);
     setProofActions(true);
@@ -263,6 +271,30 @@ function setResult(valid, title, message) {
   verificationResult.querySelector(".result-mark").textContent = valid ? "✓" : "×";
   verificationResult.querySelector("strong").textContent = title;
   verificationResult.querySelector("p").textContent = message;
+}
+
+async function pollProveJob(started) {
+  const pollUrl = started.poll_url ?? `/api/real/prove/jobs/${started.job_id}`;
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const status = await requestJson(pollUrl);
+    if (status.status === "done") {
+      return status.result;
+    }
+    if (status.status === "failed") {
+      const error = new Error(status.error ?? status.message ?? "Proof failed");
+      error.code = status.code;
+      throw error;
+    }
+    const seconds = Math.round((status.elapsed_ms ?? 0) / 1000);
+    setStatus(proverStatus, `Generating RISC Zero proof… ${seconds}s`, "busy");
+    await sleep(2000);
+  }
+  throw new Error("Proof generation timed out. Try again or use the local prover.");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function requestJson(url, options = {}) {

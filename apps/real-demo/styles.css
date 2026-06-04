@@ -129,6 +129,17 @@ h2 {
   letter-spacing: 0;
 }
 
+.prove-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 248 220 / 0.6);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .status {
   max-width: 60%;
   overflow: hidden;

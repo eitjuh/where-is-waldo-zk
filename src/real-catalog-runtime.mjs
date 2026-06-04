@@ -57,5 +57,9 @@ export async function loadPublicConfigPayload(snapshot) {
     local_prover_url: `http://${process.env.ZK_WALDO_PROVER_HOST ?? "127.0.0.1"}:${process.env.ZK_WALDO_PROVER_PORT ?? "4175"}/api/real/prove`,
     prefer_local_prover: process.env.ZK_WALDO_PREFER_LOCAL_PROVER !== "0",
     require_local_prover: process.env.ZK_WALDO_REQUIRE_LOCAL_PROVER === "1",
+    server_prove_hint:
+      process.env.ZK_WALDO_PREFER_LOCAL_PROVER === "0"
+        ? "Server proving on this VPS is much slower than a local Mac (~20s). For a fast demo, run pnpm real:prove:daemon and pnpm real:serve on your laptop."
+        : null,
   };
 }

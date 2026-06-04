@@ -1,0 +1,5 @@
+# Add this block ABOVE the final "http_status:404" catch-all in
+# ~/.cloudflared/config.yml (hostname = ZK_WALDO_PUBLIC_HOST from deploy.private.env),
+# then: systemctl --user restart cloudflared
+  - hostname: YOUR_PUBLIC_HOST
+    service: http://127.0.0.1:4174

@@ -85,6 +85,82 @@ performance item and would require new public roots.
 See [`NOTICE.md`](./NOTICE.md). Distribution rights for the puzzle pages are
 assumed cleared for this project.
 
+## VPS (private host)
+
+Private SSH targets and hostnames live in **`deploy.private.env`** (gitignored).
+Copy [`deploy.private.env.example`](./deploy.private.env.example) and fill it in.
+
+The app runs as a user-level systemd service on the VPS at `~/srv/zk-waldo`
+without changing Caddy, PHP, or your existing tunnel hostnames.
+
+| Piece | Detail |
+|-------|--------|
+| App | `systemctl --user` service `zk-waldo.service` on `127.0.0.1:4174` |
+| zkVM host | Prebuilt Linux binary at `~/srv/zk-waldo/bin/zk-waldo-zkvm-host` |
+| Public URL | `https://$ZK_WALDO_PUBLIC_HOST` via Cloudflare tunnel (see DNS below) |
+| Redeploy | `scripts/vps/deploy.sh` (reads `deploy.private.env`) |
+
+Build the Linux host binary locally (recommended on a small VPS):
+
+```bash
+scripts/vps/build-host-docker.sh
+scripts/vps/deploy.sh
+```
+
+### Cloudflare DNS (same tunnel as `demo`)
+
+Use the **same CNAME target** as your other tunnel records (e.g. `demo`): one
+tunnel, multiple hostnames. The tunnel ingress on the VPS routes by hostname
+(`waldo` → `http://127.0.0.1:4174`; `demo` / `api` → Caddy on `443`). See
+`scripts/vps/cloudflared-ingress.snippet.yaml`.
+
+Until DNS propagates, use an SSH tunnel (values from `deploy.private.env`):
+
+```bash
+ssh -N -L "${ZK_WALDO_SSH_TUNNEL_PORT:-4174}:127.0.0.1:4174" "$ZK_WALDO_SSH_REMOTE"
+```
+
+Optional: [Tailscale Serve](https://tailscale.com/kb/1312/serve) on the VPS for
+tailnet-only HTTPS (`tailscale serve --bg http://127.0.0.1:4174`).
+
+Production flags on the VPS service:
+
+```bash
+ZK_WALDO_PREFER_LOCAL_PROVER=0
+ZK_WALDO_HOST_BIN=~/srv/zk-waldo/bin/zk-waldo-zkvm-host
+HOST=127.0.0.1
+PORT=4174
+```
+
+Proving uses `RISC0_PROVER=ipc` and needs the **r0vm** binary (`rzup install` on the VPS).
+`scripts/vps/write-prover-env.sh` writes `~/.config/zk-waldo/prover.env` for systemd.
+
+On a **2 GB RAM** VPS, proof generation is usually **OOM-killed** without swap. Once per
+machine (requires sudo):
+
+```bash
+bash ~/srv/zk-waldo/scripts/vps/add-swap.sh 4G
+```
+
+Wrong tiles return **422** `CNN_REJECTED`; a missing prover returns **503**
+`PROVER_NOT_CONFIGURED` instead of a generic 500.
+
+`POST /api/real/prove` returns **202** immediately with a `job_id`; the UI polls
+`GET /api/real/prove/jobs/:id` until done. This avoids Cloudflare **524** timeouts
+(~100s limit).
+
+**Prove speed:** ~20s on a dev laptop with `pnpm real:prove:daemon` (loopback).
+The public VPS uses a **release** host binary, but shared 3 vCPU hosts are still
+much slower than your Mac. For a comfortable demo, run the local prover and keep
+`ZK_WALDO_PREFER_LOCAL_PROVER=1` in the browser (default for local `pnpm real:serve`).
+
+Rebuild the optimized Linux host after guest changes:
+
+```bash
+scripts/vps/build-host-docker.sh   # release build
+scripts/vps/deploy.sh
+```
+
 ## Known limits
 
 - Remote provers still receive witness JSON during `prove-real`.

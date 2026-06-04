@@ -3,7 +3,6 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import {
   loadPublicConfigPayload,
   loadRealCatalogSnapshot,
@@ -12,6 +11,8 @@ import { validateRealProofPrivacy } from "../src/real-demo.mjs";
 import { proveRealWitness } from "../src/real-prove.mjs";
 import { bytesToHex, prettyJson } from "../src/shared-core.mjs";
 import { generateRealWitness } from "../src/witness-core.mjs";
+import { runZkvmHost } from "../src/zkvm-host-runner.mjs";
+import { getProveJob, proveJobPayload, startProveJob } from "../src/prove-jobs.mjs";
 
 const root = resolve(".");
 const webRoot = resolve("apps/real-demo");
@@ -50,6 +51,9 @@ const server = createServer(async (request, response) => {
       snapshot = await loadRealCatalogSnapshot();
       return sendJson(response, 200, await loadPublicConfigPayload(snapshot));
     }
+    if (request.method === "GET" && url.pathname.startsWith("/api/real/prove/jobs/")) {
+      return proveJobStatus(url.pathname.slice("/api/real/prove/jobs/".length), response);
+    }
     if (request.method === "POST" && url.pathname === "/api/real/prove") {
       return await proveWitness(request, response);
     }
@@ -87,7 +91,6 @@ async function proveWitness(request, response) {
     return sendJson(response, 429, { error: "Prove rate limit exceeded. Try again shortly." });
   }
 
-  proving = true;
   try {
     snapshot = await loadRealCatalogSnapshot();
     const body = await readJsonBody(request, 500_000);
@@ -97,15 +100,69 @@ async function proveWitness(request, response) {
     }
 
     const witness = await resolveWitness(body, context);
-    const result = await proveRealWitness({
-      witness,
-      context,
-      runtimeRoot: join(runtimeRoot, "remote-prover"),
+    proving = true;
+    const jobId = startProveJob(async () => {
+      try {
+        return await proveRealWitness({
+          witness,
+          context,
+          runtimeRoot: join(runtimeRoot, "remote-prover"),
+        });
+      } finally {
+        proving = false;
+      }
     });
-    sendJson(response, 200, result);
-  } finally {
+    sendJson(response, 202, {
+      job_id: jobId,
+      status: "pending",
+      poll_url: `/api/real/prove/jobs/${jobId}`,
+      message:
+        "Proof generation started. Poll until status is done (Cloudflare times out long requests).",
+    });
+  } catch (error) {
     proving = false;
+    sendJson(response, proveErrorStatus(error), proveErrorBody(error));
   }
+}
+
+function proveJobStatus(jobId, response) {
+  const job = getProveJob(jobId.replace(/\/+$/, ""));
+  if (!job) {
+    return sendJson(response, 404, { error: "Unknown or expired proof job." });
+  }
+  const payload = proveJobPayload(job);
+  if (job.status === "failed") {
+    const error = new Error(job.error?.message ?? "Proof generation failed.");
+    error.code = job.error?.code;
+    return sendJson(response, 200, {
+      ...payload,
+      ...proveErrorBody(error),
+    });
+  }
+  const status = job.status === "done" ? 200 : 202;
+  return sendJson(response, status, payload);
+}
+
+function proveErrorStatus(error) {
+  if (error.code === "CNN_REJECTED") {
+    return 422;
+  }
+  return 503;
+}
+
+function proveErrorBody(error) {
+  const message = error.message ?? "Proof generation failed.";
+  if (error.code === "CNN_REJECTED") {
+    return { error: message, code: "CNN_REJECTED" };
+  }
+  if (message.includes("No such file or directory")) {
+    return {
+      error:
+        "RISC Zero prover (r0vm) is not configured on the server. Run scripts/vps/write-prover-env.sh on the VPS and restart zk-waldo.",
+      code: "PROVER_NOT_CONFIGURED",
+    };
+  }
+  return { error: message, code: error.code ?? "PROVE_FAILED" };
 }
 
 async function resolveWitness(body, context) {
@@ -141,11 +198,7 @@ async function verifySubmittedProof(request, response) {
     session = await makeSession("verify");
     const receiptPath = join(session, "submitted-proof.risc0.json");
     await writeFile(receiptPath, prettyJson(proof), "utf8");
-    const output = await runHost([
-      "run",
-      "-p",
-      "zk-waldo-zkvm-host",
-      "--",
+    const output = await runZkvmHost([
       "verify-real",
       "--commitment",
       context.config.commitmentPath,
@@ -242,48 +295,6 @@ async function makeSession(prefix) {
   const path = join(runtimeRoot, name);
   await mkdir(path);
   return path;
-}
-
-function runHost(args, extraEnv = {}) {
-  return new Promise((resolveCommand, rejectCommand) => {
-    const child = spawn("cargo", args, {
-      cwd: root,
-      env: { ...process.env, ...extraEnv },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      rejectCommand(new Error("RISC Zero host command timed out."));
-    }, 10 * 60 * 1000);
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      rejectCommand(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (code === 0) {
-        resolveCommand(stdout);
-      } else {
-        rejectCommand(new Error(lastUsefulLine(stderr || stdout) || `host exited with code ${code}`));
-      }
-    });
-  });
-}
-
-function lastUsefulLine(value) {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .at(-1);
 }
 
 async function readJsonBody(request, limit = 100_000) {

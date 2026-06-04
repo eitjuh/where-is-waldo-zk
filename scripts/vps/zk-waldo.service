@@ -1,0 +1,27 @@
+[Unit]
+Description=ZK Waldo real CNN demo (UI + prove + verify)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/srv/zk-waldo
+Environment=HOME=%h
+Environment=PATH=%h/.local/share/fnm:%h/.local/bin:%h/.cargo/bin:%h/.risc0/bin:/usr/local/bin:/usr/bin:/bin
+Environment=FNM_DIR=%h/.local/share/fnm
+EnvironmentFile=-%h/.config/zk-waldo/prover.env
+Environment=HOST=127.0.0.1
+Environment=PORT=4174
+Environment=ZK_WALDO_ALLOW_COORDINATE_WITNESS=0
+Environment=ZK_WALDO_PREFER_LOCAL_PROVER=0
+Environment=ZK_WALDO_TRUST_REMOTE=0
+Environment=ZK_WALDO_HOST_BIN=%h/srv/zk-waldo/bin/zk-waldo-zkvm-host
+Environment=CC=%h/bin/cc
+Environment=CXX=%h/bin/c++
+Environment=AR=%h/bin/ar
+ExecStart=/bin/bash -lc 'eval "$(fnm env)" && exec node scripts/real-demo-server.mjs'
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
