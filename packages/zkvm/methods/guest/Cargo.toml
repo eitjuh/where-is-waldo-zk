@@ -1,0 +1,14 @@
+[package]
+name = "zk-waldo-guest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zk_waldo_guest"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+risc0-zkvm = { workspace = true, default-features = false }
+zk-waldo-zkvm-core = { path = "../../core", default-features = false, features = ["risc0-sha"] }

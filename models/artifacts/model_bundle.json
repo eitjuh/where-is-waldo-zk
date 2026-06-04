@@ -1,0 +1,41 @@
+{
+  "input": {
+    "channels": 3,
+    "height": 64,
+    "layout": "row-major-rgb",
+    "pixel_type": "uint8",
+    "width": 64
+  },
+  "model_family": "handcrafted integer CNN-style region detector",
+  "model_hash": "0x70e1c166168a09fcac654adbddc2f5f0cab7ca68deb49798458e085862e6d069",
+  "model_id": "target_character_tiny_int_detector_v0",
+  "note": "This bundle is deterministic and integer-only for the local protocol demo. Replace with exported quantized CNN weights for production ZK.",
+  "ops": [
+    "fixed RGB color feature maps",
+    "region average pooling",
+    "integer dense logit",
+    "threshold comparison without sigmoid"
+  ],
+  "preprocessing": {
+    "accepted_input": "png-rgb-or-rgba",
+    "canonical_pixels": "rgb-uint8-row-major",
+    "crop_alignment": "tile-aligned-top-left",
+    "crop_height": 64,
+    "crop_width": 64,
+    "image_height": 384,
+    "image_width": 512,
+    "resize": "reject-dimension-mismatch",
+    "schema": "zk-waldo-preprocessing-v0",
+    "tile_size": 32
+  },
+  "schema": "zk-waldo-model-bundle-v0",
+  "threshold_logit": 700,
+  "weights": {
+    "bias": -1250,
+    "face_skin": 1,
+    "glasses_black": 1,
+    "hat_red": 2,
+    "pants_blue": 2,
+    "shirt_stripes": 3
+  }
+}

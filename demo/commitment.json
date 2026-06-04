@@ -1,0 +1,15 @@
+{
+  "crop_height": 64,
+  "crop_width": 64,
+  "hash_function": "sha256_domain_separated_demo_v0",
+  "image_height": 384,
+  "image_id": "synthetic_puzzle_001",
+  "image_root": "0x92c81cf5bb863bacbd33deafac860b5574adad492ec52b07903f94b9eb9d13f4",
+  "image_width": 512,
+  "leaf_count": 192,
+  "preprocessing_hash": "0x44df078df168adc21780d421e6810a4dc80e58fa3de31259c4b99632adbd3e12",
+  "schema": "zk-waldo-image-commitment-v0",
+  "tile_columns": 16,
+  "tile_rows": 12,
+  "tile_size": 32
+}

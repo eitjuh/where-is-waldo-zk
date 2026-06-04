@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>zk-waldo · Real CNN proof</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>zk-waldo</h1>
+        <p>Real puzzle · trained CNN · RISC Zero</p>
+      </div>
+      <div class="public-facts" aria-label="public proof inputs">
+        <span id="modelBadge">Loading model</span>
+        <code id="rootBadge">Loading image root</code>
+      </div>
+    </header>
+
+    <main class="split-workspace">
+      <section class="pane prover-pane" aria-labelledby="proverTitle">
+        <div class="pane-header">
+          <div>
+            <span class="pane-index">01</span>
+            <h2 id="proverTitle">Prover</h2>
+          </div>
+          <div class="status" id="proverStatus" data-state="idle">Preparing puzzle</div>
+        </div>
+
+        <div class="puzzle-picker">
+          <label for="puzzleSelect">Puzzle</label>
+          <select id="puzzleSelect" aria-label="puzzle selection"></select>
+          <span id="puzzleCount"></span>
+        </div>
+
+        <div class="puzzle-frame" id="puzzleFrame">
+          <img id="puzzleImage" alt="Real Where's Waldo puzzle" draggable="false" />
+          <div class="selection" id="selection" hidden></div>
+          <div class="proof-progress" id="proofProgress" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <strong>Generating RISC Zero proof</strong>
+          </div>
+        </div>
+
+        <div class="proof-output">
+          <div class="section-label">
+            <span>Generated proof</span>
+            <div class="actions">
+              <button id="copyProofButton" type="button" disabled>Copy</button>
+              <button id="downloadProofButton" type="button" disabled>Download</button>
+              <button id="sendProofButton" type="button" disabled>Send to verifier</button>
+            </div>
+          </div>
+          <textarea
+            id="generatedProof"
+            readonly
+            spellcheck="false"
+            aria-label="generated RISC Zero proof"
+            placeholder="Select Waldo in the puzzle"
+          ></textarea>
+        </div>
+      </section>
+
+      <section class="pane verifier-pane" aria-labelledby="verifierTitle">
+        <div class="pane-header">
+          <div>
+            <span class="pane-index">02</span>
+            <h2 id="verifierTitle">Verifier</h2>
+          </div>
+          <div class="status" id="verifierStatus" data-state="idle">Waiting for proof</div>
+        </div>
+
+        <div class="verifier-input">
+          <div class="section-label">
+            <span>Submitted proof</span>
+            <label class="file-button" for="proofUpload">Upload</label>
+            <input id="proofUpload" type="file" accept="application/json,.json" />
+          </div>
+          <textarea
+            id="submittedProof"
+            spellcheck="false"
+            aria-label="submitted proof"
+            placeholder="Paste or upload a proof"
+          ></textarea>
+          <button class="primary-command" id="verifyButton" type="button">Verify proof</button>
+        </div>
+
+        <div class="verification-result" id="verificationResult" data-state="idle">
+          <span class="result-mark" aria-hidden="true">—</span>
+          <div>
+            <strong>No proof verified</strong>
+            <p>The verifier uses the public image root, trained model hash, and RISC Zero receipt.</p>
+          </div>
+        </div>
+
+        <dl class="statement">
+          <div>
+            <dt>Image root</dt>
+            <dd><code id="imageRoot"></code></dd>
+          </div>
+          <div>
+            <dt>Verified puzzle</dt>
+            <dd id="verifiedPuzzle">—</dd>
+          </div>
+          <div>
+            <dt>Model hash</dt>
+            <dd><code id="modelHash"></code></dd>
+          </div>
+          <div>
+            <dt>Threshold</dt>
+            <dd><code id="threshold"></code></dd>
+          </div>
+          <div>
+            <dt>Private data</dt>
+            <dd>Location · crop · Merkle path</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

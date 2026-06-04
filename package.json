@@ -1,0 +1,32 @@
+{
+  "name": "zk-waldo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A real-image, trained-CNN Where's Waldo proof using RISC Zero.",
+  "scripts": {
+    "demo": "node src/cli.mjs demo",
+    "test": "node --test",
+    "serve": "node scripts/serve.mjs",
+    "zkvm:exec": "cargo run -p zk-waldo-zkvm-host -- exec-tiny",
+    "zkvm:prove": "RISC0_PROVER=ipc cargo run -p zk-waldo-zkvm-host -- prove-tiny --receipt proofs/end_to_end_tiny.risc0.json",
+    "zkvm:verify": "cargo run -p zk-waldo-zkvm-host -- verify-tiny --receipt proofs/end_to_end_tiny.risc0.json",
+    "zkvm:prove:full": "RISC0_PROVER=ipc cargo run -p zk-waldo-zkvm-host -- prove --commitment demo/commitment.json --witness demo/witness.private.json --receipt proofs/end_to_end_valid.risc0.json",
+    "zkvm:verify:full": "cargo run -p zk-waldo-zkvm-host -- verify --commitment demo/commitment.json --receipt proofs/end_to_end_valid.risc0.json",
+    "zkvm:demo": "pnpm demo && pnpm zkvm:prove && pnpm zkvm:verify",
+    "real:train": "python3 scripts/train_real_cnn.py --dataset /tmp/hey-waldo --repo .",
+    "real:prepare": "node scripts/prepare-real-demo.mjs",
+    "real:exec": "cargo run -p zk-waldo-zkvm-host -- exec-real --commitment demo/real/puzzles/ski-slope/commitment.json --witness demo/real/puzzles/ski-slope/witness.private.json",
+    "real:prove": "RISC0_PROVER=ipc cargo run -p zk-waldo-zkvm-host -- prove-real --commitment demo/real/puzzles/ski-slope/commitment.json --witness demo/real/puzzles/ski-slope/witness.private.json --receipt proofs/end_to_end_real.risc0.json",
+    "real:verify": "cargo run -p zk-waldo-zkvm-host -- verify-real --commitment demo/real/puzzles/ski-slope/commitment.json --receipt proofs/end_to_end_real.risc0.json",
+    "real:demo": "pnpm real:prepare && pnpm real:prove && pnpm real:verify",
+    "real:serve": "node scripts/real-demo-server.mjs",
+    "zk-waldo": "node src/cli.mjs"
+  },
+  "bin": {
+    "zk-waldo": "./src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

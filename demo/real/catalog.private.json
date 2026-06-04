@@ -1,0 +1,53 @@
+{
+  "schema": "zk-waldo-real-private-catalog-v1",
+  "puzzles": [
+    {
+      "id": "cliffside-chaos",
+      "title": "Cliffside Chaos",
+      "dataset_index": 7,
+      "image_path": "apps/real-demo/assets/puzzles/cliffside-chaos.png",
+      "x": 768,
+      "y": 320
+    },
+    {
+      "id": "ski-slope",
+      "title": "Ski Slope",
+      "dataset_index": 10,
+      "image_path": "apps/real-demo/assets/puzzles/ski-slope.png",
+      "x": 960,
+      "y": 256
+    },
+    {
+      "id": "castle-courtyard",
+      "title": "Castle Courtyard",
+      "dataset_index": 11,
+      "image_path": "apps/real-demo/assets/puzzles/castle-courtyard.png",
+      "x": 384,
+      "y": 704
+    },
+    {
+      "id": "busy-boulevard",
+      "title": "Busy Boulevard",
+      "dataset_index": 14,
+      "image_path": "apps/real-demo/assets/puzzles/busy-boulevard.png",
+      "x": 64,
+      "y": 768
+    },
+    {
+      "id": "museum-mayhem",
+      "title": "Museum Mayhem",
+      "dataset_index": 16,
+      "image_path": "apps/real-demo/assets/puzzles/museum-mayhem.png",
+      "x": 640,
+      "y": 256
+    },
+    {
+      "id": "stadium-crowd",
+      "title": "Stadium Crowd",
+      "dataset_index": 17,
+      "image_path": "apps/real-demo/assets/puzzles/stadium-crowd.png",
+      "x": 832,
+      "y": 320
+    }
+  ]
+}

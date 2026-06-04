@@ -1,0 +1,15 @@
+{
+  "crop_height": 64,
+  "crop_width": 64,
+  "hash_function": "sha256-domain-separated-v0",
+  "image_height": 1024,
+  "image_id": "hey-waldo-real-stadium-crowd",
+  "image_root": "0xa368581664291324798873840ad209c8ad70a733dff48b86edc9fd771661a253",
+  "image_width": 1024,
+  "leaf_count": 256,
+  "preprocessing_hash": "0xf3d3e0ae30bf900fbd768125ce991442c221725660ce0675d60c58cf96b922ac",
+  "schema": "zk-waldo-image-commitment-v1",
+  "tile_columns": 16,
+  "tile_rows": 16,
+  "tile_size": 64
+}

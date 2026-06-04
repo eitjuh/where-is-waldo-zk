@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>zk-waldo verifier</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <div class="visual-pane">
+          <div class="canvas-bar">
+            <div>
+              <h1>zk-waldo</h1>
+              <p>Public puzzle, private location proof demo</p>
+            </div>
+            <button id="resetButton" type="button">Reset</button>
+          </div>
+          <canvas id="puzzleCanvas" width="512" height="384" aria-label="public puzzle image"></canvas>
+        </div>
+
+        <aside class="control-pane">
+          <div class="status-strip" id="statusStrip">Ready</div>
+
+          <div class="field-group">
+            <label for="rootField">image_root</label>
+            <textarea id="rootField" readonly rows="3"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label for="modelField">model_hash</label>
+            <textarea id="modelField" readonly rows="3"></textarea>
+          </div>
+
+          <div class="button-row">
+            <button id="proveButton" type="button">Generate Private Proof</button>
+            <button id="verifyButton" type="button">Verify</button>
+          </div>
+
+          <div class="field-group">
+            <label for="proofField">proof receipt</label>
+            <textarea id="proofField" rows="14" spellcheck="false"></textarea>
+          </div>
+
+          <div class="result-panel" id="resultPanel">
+            <strong>No proof verified yet.</strong>
+            <span>The verifier output will appear here.</span>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

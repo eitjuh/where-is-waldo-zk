@@ -1,0 +1,24 @@
+{
+  "attestation": "0x5b15e2bd334687d5969f1bd9df27ff0c831e7148d1814dabc8e2c0bfa5c57c4d",
+  "backend": "demo-local-attestation-v0",
+  "cryptographic_status": "demo attestation only; replace this backend with EZKL/RISC Zero for production zero-knowledge soundness",
+  "proof_digest": "0xc2c525de2212de3549b94b11c3a5f2e6ca9ea39a167f0004433cc34d5712813e",
+  "protocol_version": "zk-waldo-demo-v0",
+  "public_inputs": {
+    "crop_height": 64,
+    "crop_width": 64,
+    "image_height": 384,
+    "image_root": "0x92c81cf5bb863bacbd33deafac860b5574adad492ec52b07903f94b9eb9d13f4",
+    "image_width": 512,
+    "model_hash": "0x70e1c166168a09fcac654adbddc2f5f0cab7ca68deb49798458e085862e6d069",
+    "preprocessing_hash": "0x44df078df168adc21780d421e6810a4dc80e58fa3de31259c4b99632adbd3e12",
+    "threshold_logit": 700,
+    "tile_size": 32
+  },
+  "public_output": {
+    "accepted": true,
+    "statement": "prover knows a private crop from image_root that passes model_hash at threshold_logit"
+  },
+  "schema": "zk-waldo-proof-receipt-v0",
+  "verifier_notice": "This receipt intentionally omits coordinates, crop pixels, tile pixels, leaf indices, and Merkle paths."
+}
